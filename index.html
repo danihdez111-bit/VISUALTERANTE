@@ -51,6 +51,7 @@
 
   <div class="stage">
     <canvas id="gl" width="1920" height="1080"></canvas>
+    <canvas id="ov" width="1920" height="1080" style="position:absolute;inset:0;pointer-events:none"></canvas>
     <div class="rec" id="recPill"><span class="dot"></span><span id="recTime">REC 0:00</span></div>
   </div>
 
@@ -81,6 +82,14 @@
         <label style="margin-top:6px;font-size:12px"><input type="checkbox" id="flipFg" style="width:auto"> En la imagen mira a la izquierda</label>
       </div>
       <div>
+        <label>Imagen 3 · profundidad del fondo (opcional, 3D)</label>
+        <input type="file" id="image3" accept="image/*">
+      </div>
+      <div>
+        <label>Tamaño patronus: <b id="sizeV">1.00</b></label>
+        <input type="range" id="psize" min="0.4" max="2.5" step="0.05" value="1">
+      </div>
+      <div>
         <label>Color A</label>
         <input type="color" id="colA" value="#4aa8e0">
       </div>
@@ -98,6 +107,13 @@
       <label>2 · Palabras temporizadas — una por línea: <code>min:seg | palabra | posición</code></label>
       <textarea id="cues">1:54 | boff | centro</textarea>
       <div class="hint">Posiciones: <code>centro</code>, <code>arriba</code>, <code>abajo</code>. Cada palabra entra difuminada en 0,5 s y se va sola. Admite decimales (<code>1:53.5</code>).</div>
+    </div>
+
+    <div style="margin-top:12px">
+      <label>3 · Recorrido del patronus (solo estilo Patronus) — marca en orden dónde pisa, en el suelo de los pasillos</label>
+      <div class="btns" style="margin-top:4px"><button id="editPath">✎ Marcar recorrido</button><button id="clearPath">Borrar puntos</button></div>
+      <textarea id="pathTxt" style="min-height:40px;margin-top:8px" placeholder="Sin puntos: se mueve solo por la pantalla"></textarea>
+      <div class="hint">Pulsa <b>Marcar recorrido</b> y haz clic sobre la imagen. El patronus recorre los puntos en orden durante toda la canción (más despacio a lo lejos). Con la Imagen 3 se mete <i>dentro</i> del laberinto: los setos de delante lo tapan. Copia este texto si quieres guardar el recorrido.</div>
     </div>
 
     <div class="btns">
@@ -123,7 +139,7 @@ let gl, scenes={}, textProg, ut={}, specTex, textTex, textCanvas, textCtx, activ
 let imgTex, imgAspect=1, hasImg=false;
 let fgTex, fgAspect=1, hasFg=false;
 const NB=72, specData=new Uint8Array(NB);
-const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uFg','uFgAspect','uHasFg','uPos','uFacing','uScale','uKickAge','uTrail','uDepth','uTilt'];
+const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uFg','uFgAspect','uHasFg','uPos','uFacing','uScale','uKickAge','uTrail','uDepth','uTilt','uPD','uFgBot','uHasDep','uDep'];
 
 function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
   if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
@@ -242,7 +258,7 @@ void main(){
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
 const FS_PATRONUS=HEAD+`uniform sampler2D uImg;uniform sampler2D uFg;uniform float uImgAspect,uHasImg,uFgAspect,uHasFg;
-uniform vec2 uPos;uniform float uFacing,uScale,uKickAge,uDepth,uTilt;uniform vec2 uTrail[12];
+uniform vec2 uPos;uniform float uFacing,uScale,uKickAge,uDepth,uTilt,uPD,uFgBot,uHasDep;uniform vec2 uTrail[12];uniform sampler2D uDep;
 float fgS(vec2 p){vec2 q=vec2(p.x/uFgAspect,p.y)+0.5;
  if(q.x<0.0||q.x>1.0||q.y<0.0||q.y>1.0)return 0.0;
  vec3 s=texture(uFg,q).rgb;float v=max(s.r,max(s.g,s.b));
@@ -255,25 +271,37 @@ void main(){
  float far=1.0-uDepth;
  /* camara: dolly lento + golpe de zoom en graves/kicks */
  float zoom=0.86+0.035*sin(t*0.031+0.4)-0.035*uBass*I-0.025*uFlash*I;
- vec2 cam=vec2(0.045*sin(t*0.023+1.0)+uPos.x*0.03/scrA,0.028*sin(t*0.019+2.0)+uPos.y*0.02);
- vec2 bc=c*zoom+cam;
+ vec2 cam=vec2(0.045*sin(t*0.023+1.0),0.028*sin(t*0.019+2.0));
+ /* parallax 3D con el mapa de profundidad: lo cercano se desplaza mas que lo lejano */
+ vec2 shift=vec2(0.020*sin(t*0.043+0.7),0.008*sin(t*0.029+1.3))*(1.0+0.6*uFlash*I)*uHasDep;
+ vec2 bc0=c*zoom+cam;float sd=0.5;
+ if(uHasDep>0.5){sd=texture(uDep,coverUV(bc0,uImgAspect,scrA)).r;sd=texture(uDep,coverUV(bc0+shift*(sd-0.5),uImgAspect,scrA)).r;}
+ vec2 bc=bc0+shift*(sd-0.5);
  vec3 raw;
  if(uHasImg>0.5){raw=texture(uImg,coverUV(bc,uImgAspect,scrA)).rgb;}
  else{float h=fbm(bc*vec2(scrA,1.0)*6.0);float lane=smoothstep(0.45,0.55,abs(fract(bc.x*5.0)-0.5)+0.3*h);
   raw=mix(vec3(0.02,0.07,0.04),vec3(0.05,0.16,0.07),h)*(0.6+0.6*lane);}
  float lum=dot(raw,vec3(0.299,0.587,0.114));
  vec3 night=uColA;
- vec3 bg=raw*vec3(0.62,0.85,0.78);
- bg=mix(night*0.35,bg,smoothstep(0.0,0.55,lum));
- bg*=0.72+0.25*uLevel;
+ vec3 bg=raw*vec3(0.88,1.0,0.95);
+ bg=mix(night*0.45,bg,smoothstep(0.0,0.22,lum));
+ bg*=0.95+0.30*uLevel;
  float pulse=0.55+0.35*uLevel+1.1*uFlash*I;
  /* luz del patronus sobre el laberinto */
- vec2 d0=ca-uPos;float dist=length(d0);float sr=uScale*0.9;
- float spill=exp(-dist*dist/(sr*sr))*pulse;
+ /* el patronus vive en coordenadas de la imagen: sigue a la camara y al parallax */
+ bool useOcc=uHasDep>0.5&&uPD>=0.0;float pd=useOcc?uPD:0.5;
+ vec2 feetA=((uPos-cam-shift*(pd-0.5))/zoom)*vec2(scrA,1.0);
+ float scl=uScale/zoom;
+ vec2 cen=feetA+vec2(0.0,(0.5-uFgBot)*scl);
+ /* oclusion: los setos mas cercanos que el patronus lo tapan */
+ float occ=useOcc?1.0-smoothstep(pd+0.015,pd+0.06,sd):1.0;
+ float prox=useOcc?exp(-pow((sd-pd)*5.0,2.0)):1.0;
+ vec2 d0=ca-cen;float dist=length(d0);float sr=scl*0.9;
+ float spill=exp(-dist*dist/(sr*sr))*pulse*(0.3+0.7*prox);
  bg+=raw*uColB*spill*1.6+uColB*spill*0.04;
  /* charco de luz en el suelo, bajo las patas: lo ancla al suelo */
- vec2 fp=ca-(uPos+vec2(0.0,-uScale*0.36));
- float pool=exp(-(fp.x*fp.x)/(uScale*uScale*0.30)-(fp.y*fp.y)/(uScale*uScale*0.012))*pulse;
+ vec2 fp=ca-feetA;
+ float pool=exp(-(fp.x*fp.x)/(scl*scl*0.30)-(fp.y*fp.y)/(scl*scl*0.012))*pulse*prox;
  bg+=raw*uColB*pool*2.2+uColB*pool*0.10;
  /* niebla en dos capas con parallax */
  vec2 mp=ca+cam*vec2(scrA,1.0);
@@ -281,6 +309,7 @@ void main(){
  float m2=fbm(mp*3.8+vec2(-t*0.034,t*0.011)+m1);
  float mist=smoothstep(0.38,0.95,m1*0.55+m2*0.45);
  mist*=(0.30+0.45*(1.0-uv.y))*(0.75+0.7*uMid*I);
+ if(uHasDep>0.5)mist*=mix(1.5,0.45,sd);
  float ring=exp(-pow((dist-uKickAge*0.85)*12.0,2.0))*exp(-uKickAge*2.6)*I;
  vec3 mistCol=night*0.55+uColB*(spill*0.9+ring*1.4);
  bg=mix(bg,mistCol,mist*0.55)+uColB*ring*0.10;
@@ -292,8 +321,8 @@ void main(){
  bg+=vec3(0.75,1.0,0.85)*fl*tw*(0.35+1.4*uHigh*I)*0.6;
  /* patronus: espiritu de luz, no pegatina (solo se calcula cerca de el) */
  float body=0.0,rim=0.0,smoke=0.0,aura=0.0;
- if(dist<uScale*0.95){
- vec2 p=d0/uScale;
+ if(dist<scl*0.95){
+ vec2 p=d0/scl;
  float cs=cos(uTilt),sn=sin(uTilt);p=mat2(cs,sn,-sn,cs)*p;
  p.x/=uFacing;
  p+=(vec2(noise(p*6.0+t*0.9),noise(p*6.0-t*0.8+3.0))-0.5)*(0.018+0.04*uHigh*I);
@@ -318,17 +347,18 @@ void main(){
  }
  float flick=0.92+0.08*noise(vec2(t*7.0,1.0));
  float breath=(0.85+0.15*sin(t*1.7)+0.35*uLevel+0.9*uFlash*I)*flick;
- float halo=exp(-dist*dist/(uScale*uScale*0.18))*0.20*breath;
- float light=(body+rim*1.25+aura*0.75+smoke)*breath;
+ float halo=exp(-dist*dist/(scl*scl*0.18))*0.20*breath*mix(0.45,1.0,occ);
+ float light=(body+rim*1.25+aura*0.75+smoke)*breath*occ;
  vec3 glow=mix(uColB,vec3(1.0),clamp(rim+body,0.0,1.0)*0.6)*light+uColB*halo;
  glow*=mix(1.0,0.6,far);
  /* estela de chispas */
  float trail=0.0;
  for(int i=0;i<12;i++){float fi=float(i);float fade=1.0-fi/12.0;
-  vec2 tp=uTrail[i]+vec2(sin(fi*2.3+t*1.3),cos(fi*1.7+t*1.1))*0.010*fi+vec2(0.0,0.004*fi);
+  vec2 tp=((uTrail[i]-cam-shift*(pd-0.5))/zoom)*vec2(scrA,1.0)+vec2(0.0,(0.5-uFgBot)*scl*0.7)+vec2(sin(fi*2.3+t*1.3),cos(fi*1.7+t*1.1))*0.010*fi+vec2(0.0,0.004*fi);
   vec2 dd=ca-tp;float r2=dot(dd,dd);float tk=0.55+0.45*sin(t*9.0+fi*1.9);
   trail+=exp(-r2*14000.0/(1.0+fi*0.5))*fade*tk*(0.7+1.2*uHigh*I);
-  trail+=exp(-r2*220.0/uScale)*fade*0.025;}
+  trail+=exp(-r2*220.0/scl)*fade*0.025;}
+ trail*=occ;
  glow+=mix(uColB,vec3(1.0),0.5)*trail;
  vec3 col=bg+glow;
  /* cuando esta lejos, la niebla pasa por delante */
@@ -389,6 +419,38 @@ function cueAlpha(c,t){const a=c.t0,b=c.t0+c.fin,cc=b+c.hold,d=cc+c.fout;if(t<a|
 
 let actx,analyser,freqBuf,srcNode,buffer=null,msDest,startTime=0,playing=false,bassAvg=0,flash=0,kickT=-99,facingS=1;
 const trailArr=new Float32Array(24);
+let depTex=null,hasDep=false,depCPU=null,depW=0,depH=0,fgBot=0.38,waypoints=[],wpCache=null,editPath=false,curT=0;
+function sizeK(){return parseFloat(S('psize').value);}
+function camJS(t){return {zoom:0.86+0.035*Math.sin(t*0.031+0.4),x:0.045*Math.sin(t*0.023+1.0),y:0.028*Math.sin(t*0.019+2.0)};}
+function coverJS(cx,cy){const scrA=16/9,A=imgAspect;let x=cx,y=cy;if(A>scrA)x*=scrA/A;else y*=A/scrA;return [x+0.5,y+0.5];}
+function depthAt(bx,by){if(!depCPU)return 0.45;const [u,v]=coverJS(bx,by);let s=0,n=0;
+  for(let j=-1;j<=1;j++)for(let i=-1;i<=1;i++){const px=Math.min(depW-1,Math.max(0,Math.round(u*(depW-1))+i)),py=Math.min(depH-1,Math.max(0,Math.round((1-v)*(depH-1))+j));s+=depCPU[(py*depW+px)*4];n++;}
+  return s/n/255;}
+function buildPath(){const W=waypoints;if(W.length<2){wpCache=null;return;}const seg=[];let tot=0;
+  for(let i=0;i<W.length-1;i++){const a=W[i],b=W[i+1];const d=Math.hypot((b[0]-a[0])*16/9,b[1]-a[1]);
+    const dm=hasDep?Math.max(0.12,(depthAt(a[0],a[1])+depthAt(b[0],b[1]))/2):1;const w=Math.max(1e-4,d/dm);seg.push(w);tot+=w;}
+  wpCache={seg,tot};}
+function cr(a,b,c,d,u){const u2=u*u,u3=u2*u;return [0,1].map(k=>0.5*(2*b[k]+(-a[k]+c[k])*u+(2*a[k]-5*b[k]+4*c[k]-d[k])*u2+(-a[k]+3*b[k]-3*c[k]+d[k])*u3));}
+function wpAt(t){const W=waypoints,n=W.length;const dur=buffer?buffer.duration:60;let f=t/dur;
+  f=playing?Math.min(1,Math.max(0,f)):((f%1)+1)%1;let tg=f*wpCache.tot,i=0;
+  while(i<n-2&&tg>wpCache.seg[i]){tg-=wpCache.seg[i];i++;}
+  const u=Math.min(1,tg/wpCache.seg[i]);const g=k=>W[Math.max(0,Math.min(n-1,k))];return cr(g(i-1),g(i),g(i+1),g(i+2),u);}
+/* posicion de las PATAS en coordenadas de la imagen + profundidad + tamano */
+function pathAt(t){
+  if(wpCache){const P=wpAt(t);const d=hasDep?depthAt(P[0],P[1]):0.45;const z=Math.min(1,Math.max(0,(d-0.15)/0.5));
+    const sz=(hasDep?0.6*Math.pow(Math.max(d,0.05),1.5):0.30)*sizeK();
+    return {bx:P[0],by:P[1]+0.03*sz*Math.abs(Math.sin(t*3.2)),d,z,s:sz,occ:hasDep};}
+  const q=patPath(t);const sz=(0.22+0.33*q.z)*sizeK();
+  return {bx:q.x/(16/9)*0.86,by:(q.y-(0.5-fgBot)*sz)*0.86,d:-1,z:q.z,s:sz*0.86,occ:false};}
+function syncPathTxt(){S('pathTxt').value=waypoints.map(w=>w[0].toFixed(3)+','+w[1].toFixed(3)).join('; ');try{localStorage.setItem('vt_path',S('pathTxt').value);}catch(e){}}
+function parsePathTxt(){waypoints=S('pathTxt').value.split(';').map(x=>x.split(',').map(Number)).filter(p=>p.length===2&&p.every(isFinite));buildPath();try{localStorage.setItem('vt_path',S('pathTxt').value);}catch(e){}}
+function drawOverlay(){const ov=S('ov'),c=ov.getContext('2d');c.clearRect(0,0,1920,1080);
+  if(playing||S('style').value!=='patronus'||!(editPath||waypoints.length))return;const k=camJS(curT);
+  const sp=w=>[((w[0]-k.x)/k.zoom+0.5)*1920,(0.5-(w[1]-k.y)/k.zoom)*1080];
+  c.lineWidth=4;c.strokeStyle='rgba(31,209,178,.7)';c.beginPath();waypoints.forEach((w,i)=>{const [x,y]=sp(w);i?c.lineTo(x,y):c.moveTo(x,y);});c.stroke();
+  c.font='700 30px Poppins,sans-serif';c.textAlign='center';c.textBaseline='middle';
+  waypoints.forEach((w,i)=>{const [x,y]=sp(w);c.fillStyle='#1fd1b2';c.beginPath();c.arc(x,y,20,0,7);c.fill();c.fillStyle='#04121d';c.fillText(i+1,x,y+1);});
+  if(editPath){c.fillStyle='rgba(0,0,0,.55)';c.fillRect(20,20,820,60);c.fillStyle='#fff';c.textAlign='left';c.fillText('Clic en el suelo de los pasillos, en orden',40,51);}}
 function songT(){return actx.currentTime-startTime;}
 /* recorrido del patronus: suma de senos no conmensurables -> no se repite en toda la cancion */
 function patPath(t){
@@ -405,7 +467,7 @@ function buildGraph(){srcNode=actx.createBufferSource();srcNode.buffer=buffer;
   analyser=actx.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=0.6;
   freqBuf=new Uint8Array(analyser.frequencyBinCount);msDest=actx.createMediaStreamDestination();
   srcNode.connect(analyser);analyser.connect(actx.destination);analyser.connect(msDest);}
-function startAudio(){buildGraph();srcNode.start(0);startTime=actx.currentTime;playing=true;kickT=-99;facingS=(patPath(0.1).x-patPath(-0.1).x)>=0?1:-1;
+function startAudio(){buildGraph();srcNode.start(0);startTime=actx.currentTime;playing=true;kickT=-99;facingS=(pathAt(0.1).bx-pathAt(-0.1).bx)>=0?1:-1;
   srcNode.onended=()=>{playing=false;if(recorder&&recorder.state==='recording')recorder.stop();};}
 function stopAudio(){try{srcNode&&srcNode.stop();}catch(e){}playing=false;}
 
@@ -421,8 +483,8 @@ function readAudio(){
 
 let t0=performance.now();
 function frame(){
-  const t=playing?songT():(performance.now()-t0)/1000;
-  readAudio();
+  const t=playing?songT():(performance.now()-t0)/1000;curT=t;
+  readAudio();drawOverlay();
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D,specTex);
   gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,NB,1,gl.RED,gl.UNSIGNED_BYTE,specData);
@@ -446,15 +508,19 @@ function frame(){
     if(L.uImg){gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,imgTex);gl.uniform1i(L.uImg,1);}
     if(L.uFgAspect)gl.uniform1f(L.uFgAspect,fgAspect);
     if(L.uHasFg)gl.uniform1f(L.uHasFg,hasFg?1.0:0.0);
-    if(L.uPos){const I=parseFloat(S('intensity').value),P=patPath(t);
-      const dx=patPath(t+0.1).x-patPath(t-0.1).x;facingS+=((dx>=0?1:-1)-facingS)*0.07;
+    if(L.uPos){const I=parseFloat(S('intensity').value),P=pathAt(t);
+      const dx=pathAt(t+0.1).bx-pathAt(t-0.1).bx;if(Math.abs(dx)>1e-5)facingS+=((dx>=0?1:-1)-facingS)*0.07;
       const f=Math.sign(facingS||1)*Math.max(Math.abs(facingS),0.12)*(S('flipFg').checked?-1:1);
-      gl.uniform2f(L.uPos,P.x,P.y);gl.uniform1f(L.uFacing,f);
-      gl.uniform1f(L.uScale,(0.22+0.33*P.z)*(1+0.07*lastBass*I+0.05*flash*I));
+      gl.uniform2f(L.uPos,P.bx,P.by);gl.uniform1f(L.uFacing,f);
+      gl.uniform1f(L.uScale,P.s*(1+0.07*lastBass*I+0.05*flash*I));
       if(L.uDepth)gl.uniform1f(L.uDepth,P.z);
-      if(L.uTilt){const P2=patPath(t+0.15);const sl=Math.atan2(P2.y-P.y,Math.abs(P2.x-P.x)+1e-4);gl.uniform1f(L.uTilt,Math.max(-0.12,Math.min(0.12,sl*0.5))*Math.sign(f)+0.025*Math.sin(t*6.4));}
+      if(L.uPD)gl.uniform1f(L.uPD,P.occ?P.d:-1.0);
+      if(L.uFgBot)gl.uniform1f(L.uFgBot,hasFg?fgBot:0.38);
+      if(L.uHasDep)gl.uniform1f(L.uHasDep,hasDep?1.0:0.0);
+      if(L.uDep){gl.activeTexture(gl.TEXTURE3);gl.bindTexture(gl.TEXTURE_2D,depTex||imgTex);gl.uniform1i(L.uDep,3);}
+      if(L.uTilt){const P2=pathAt(t+0.15);const sl=Math.atan2((P2.by-P.by),Math.abs(P2.bx-P.bx)*16/9+1e-4);gl.uniform1f(L.uTilt,Math.max(-0.12,Math.min(0.12,sl*0.5))*Math.sign(f)+0.025*Math.sin(t*6.4));}
       gl.uniform1f(L.uKickAge,playing?Math.max(0,t-kickT):10.0);
-      for(let i=0;i<12;i++){const q=patPath(t-0.18*(i+1));trailArr[2*i]=q.x;trailArr[2*i+1]=q.y;}
+      for(let i=0;i<12;i++){const q=pathAt(t-0.18*(i+1));trailArr[2*i]=q.bx;trailArr[2*i+1]=q.by;}
       gl.uniform2fv(L.uTrail,trailArr);}
     if(L.uFg){gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,fgTex);gl.uniform1i(L.uFg,2);}
     if(L.uSpec){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,specTex);gl.uniform1i(L.uSpec,0);}
@@ -504,8 +570,31 @@ S('image').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Ima
 S('image2').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Image();
   img.onload=()=>{fgAspect=img.width/img.height;gl.bindTexture(gl.TEXTURE_2D,fgTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
-    hasFg=true;if(S('style').value!=='patronus'){S('style').value='patronus';applyPreset();}setStatus('Patronus cargado. Carga también el fondo (Imagen 1) y dale a Previsualizar.');URL.revokeObjectURL(img.src);};
+    hasFg=true;fgBot=detectBottom(img);if(S('style').value!=='patronus'){S('style').value='patronus';applyPreset();}setStatus('Patronus cargado. Carga también el fondo (Imagen 1) y dale a Previsualizar.');URL.revokeObjectURL(img.src);};
   img.onerror=()=>showErr('No se pudo cargar la imagen 2.');img.src=URL.createObjectURL(f);};
+/* donde estan las patas en la imagen del patronus (fila brillante mas baja) */
+function detectBottom(img){try{const w=160,h=Math.max(1,Math.round(160/(img.width/img.height)));const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+  const cx=cv.getContext('2d');cx.drawImage(img,0,0,w,h);const d=cx.getImageData(0,0,w,h).data;
+  for(let y=h-1;y>=0;y--){let hit=0;for(let x=0;x<w;x++){const i=(y*w+x)*4;if(Math.max(d[i],d[i+1],d[i+2])>80)hit++;}if(hit>=2)return Math.min(0.48,Math.max(0.0,1-(y+1)/h));}
+}catch(e){}return 0.14;}
+S('image3').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Image();
+  img.onload=()=>{if(!depTex){depTex=gl.createTexture();}gl.bindTexture(gl.TEXTURE_2D,depTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    depW=320;depH=Math.max(1,Math.round(320/(img.width/img.height)));const cv=document.createElement('canvas');cv.width=depW;cv.height=depH;
+    const cx=cv.getContext('2d');cx.drawImage(img,0,0,depW,depH);depCPU=cx.getImageData(0,0,depW,depH).data;
+    hasDep=true;buildPath();setStatus(waypoints.length>1?'Profundidad cargada: el patronus ya está dentro del laberinto.':'Profundidad cargada. Ahora pulsa “Marcar recorrido” y haz clic en el suelo de los pasillos.');URL.revokeObjectURL(img.src);};
+  img.onerror=()=>showErr('No se pudo cargar la imagen de profundidad.');img.src=URL.createObjectURL(f);};
+S('psize').oninput=e=>S('sizeV').textContent=parseFloat(e.target.value).toFixed(2);
+S('editPath').onclick=()=>{editPath=!editPath;S('editPath').textContent=editPath?'✔ Terminar':'✎ Marcar recorrido';
+  if(editPath&&S('style').value!=='patronus'){S('style').value='patronus';applyPreset();}};
+S('clearPath').onclick=()=>{waypoints=[];syncPathTxt();buildPath();};
+S('pathTxt').onchange=parsePathTxt;
+S('gl').parentElement.addEventListener('click',e=>{if(!editPath)return;const r=S('gl').getBoundingClientRect();
+  const cx=(e.clientX-r.left)/r.width-0.5,cy=0.5-(e.clientY-r.top)/r.height;const k=camJS(curT);
+  waypoints.push([cx*k.zoom+k.x,cy*k.zoom+k.y]);syncPathTxt();buildPath();});
+try{const sv=localStorage.getItem('vt_path');if(sv){S('pathTxt').value=sv;parsePathTxt();}}catch(e){}
 function applyPreset(){if(S('style').value==='patronus'){S('colA').value='#0b1d3a';S('colB').value='#dff1ff';}}
 S('style').onchange=applyPreset;
 async function ensureCtx(){if(actx&&actx.state==='suspended')await actx.resume();}
