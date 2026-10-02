@@ -78,6 +78,7 @@
       <div>
         <label>Imagen 2 · patronus (sobre negro)</label>
         <input type="file" id="image2" accept="image/*">
+        <label style="margin-top:6px;font-size:12px"><input type="checkbox" id="flipFg" style="width:auto"> En la imagen mira a la izquierda</label>
       </div>
       <div>
         <label>Color A</label>
@@ -122,7 +123,7 @@ let gl, scenes={}, textProg, ut={}, specTex, textTex, textCanvas, textCtx, activ
 let imgTex, imgAspect=1, hasImg=false;
 let fgTex, fgAspect=1, hasFg=false;
 const NB=72, specData=new Uint8Array(NB);
-const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uFg','uFgAspect','uHasFg'];
+const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uFg','uFgAspect','uHasFg','uPos','uFacing','uScale','uKickAge','uTrail'];
 
 function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
   if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
@@ -241,34 +242,69 @@ void main(){
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
 const FS_PATRONUS=HEAD+`uniform sampler2D uImg;uniform sampler2D uFg;uniform float uImgAspect,uHasImg,uFgAspect,uHasFg;
+uniform vec2 uPos;uniform float uFacing,uScale,uKickAge;uniform vec2 uTrail[12];
+float fgS(vec2 p){vec2 q=vec2(p.x/uFgAspect,p.y)+0.5;
+ if(q.x<0.0||q.x>1.0||q.y<0.0||q.y>1.0)return 0.0;
+ vec3 s=texture(uFg,q).rgb;float v=max(s.r,max(s.g,s.b));return smoothstep(0.035,0.35,v)*v;}
+float sprite(vec2 p){if(uHasFg>0.5)return fgS(p);return exp(-dot(p,p)*40.0);}
 void main(){
- vec2 uv=gl_FragCoord.xy/uRes;vec2 c=uv-0.5;float scrA=uRes.x/uRes.y;
- float push=1.0-0.05*uLevel-0.03*sin(uTime*0.05);
- vec2 bc=c*push+vec2(sin(uTime*0.03),cos(uTime*0.025))*0.02;
- vec3 bg;
- if(uHasImg>0.5){bg=texture(uImg,coverUV(bc,uImgAspect,scrA)).rgb;}
- else{bg=mix(uColA,uColB,clamp(uv.y,0.0,1.0));}
- float lumi=dot(bg,vec3(0.299,0.587,0.114));
- bg=mix(bg*0.35,mix(uColA,uColB,0.5)*(0.5+lumi),0.55);
- bg*=0.6;
- bg*=1.0-0.6*pow(length(uv-0.5)*1.25,2.2);
- vec3 glow=vec3(0.0);
- if(uHasFg>0.5){
-  float t=uTime*0.08;
-  vec2 path=vec2(sin(t*1.3)*0.30,sin(t*0.9)*0.16+sin(uTime*2.0)*0.01);
-  float sc=0.55-0.16*sin(t*0.9);sc*=(1.0-0.10*uBass*uIntensity);
-  vec2 fc=(c-path)/max(sc,0.05);
-  float aura=0.0;
-  for(int i=0;i<8;i++){float a=float(i)/8.0*6.2831853;
-   vec2 off=vec2(cos(a),sin(a))*(0.015+0.03*uFlash);
-   aura+=texture(uFg,clamp(coverUV(fc+off,uFgAspect,scrA),0.0,1.0)).r;}
-  aura/=8.0;
-  float cen=texture(uFg,clamp(coverUV(fc,uFgAspect,scrA),0.0,1.0)).r;
-  float bright=(cen*1.25+aura*0.95)*(0.75+0.7*uFlash+0.35*uLevel);
-  glow=vec3(0.82,0.92,1.0)*bright*(0.8+0.4*uIntensity);
- }
+ vec2 uv=gl_FragCoord.xy/uRes;float scrA=uRes.x/uRes.y;
+ vec2 c=uv-0.5;vec2 ca=c*vec2(scrA,1.0);float I=uIntensity;float t=uTime;
+ /* camara: dolly lento + golpe de zoom en graves/kicks */
+ float zoom=0.86+0.035*sin(t*0.031+0.4)-0.035*uBass*I-0.025*uFlash*I;
+ vec2 cam=vec2(0.045*sin(t*0.023+1.0)+uPos.x*0.03/scrA,0.028*sin(t*0.019+2.0)+uPos.y*0.02);
+ vec2 bc=c*zoom+cam;
+ vec3 raw;
+ if(uHasImg>0.5){raw=texture(uImg,coverUV(bc,uImgAspect,scrA)).rgb;}
+ else{float h=fbm(bc*vec2(scrA,1.0)*6.0);float lane=smoothstep(0.45,0.55,abs(fract(bc.x*5.0)-0.5)+0.3*h);
+  raw=mix(vec3(0.02,0.07,0.04),vec3(0.05,0.16,0.07),h)*(0.6+0.6*lane);}
+ float lum=dot(raw,vec3(0.299,0.587,0.114));
+ vec3 night=uColA;
+ vec3 bg=raw*vec3(0.62,0.85,0.78);
+ bg=mix(night*0.35,bg,smoothstep(0.0,0.55,lum));
+ bg*=0.72+0.25*uLevel;
+ /* luz del patronus sobre el laberinto */
+ vec2 d0=ca-uPos;float dist=length(d0);float sr=uScale*0.9;
+ float spill=exp(-dist*dist/(sr*sr))*(0.55+0.35*uLevel+1.1*uFlash*I);
+ bg+=raw*uColB*spill*1.6+uColB*spill*0.04;
+ /* niebla en dos capas con parallax */
+ vec2 mp=ca+cam*vec2(scrA,1.0);
+ float m1=fbm(mp*1.6+vec2(t*0.018,t*0.004));
+ float m2=fbm(mp*3.8+vec2(-t*0.034,t*0.011)+m1);
+ float mist=smoothstep(0.38,0.95,m1*0.55+m2*0.45);
+ mist*=(0.30+0.45*(1.0-uv.y))*(0.75+0.7*uMid*I);
+ /* onda expansiva en cada kick */
+ float ring=exp(-pow((dist-uKickAge*0.85)*12.0,2.0))*exp(-uKickAge*2.6)*I;
+ vec3 mistCol=night*0.55+uColB*(spill*0.9+ring*1.4);
+ bg=mix(bg,mistCol,mist*0.55)+uColB*ring*0.10;
+ /* luciernagas que titilan con los agudos */
+ vec2 g=ca*9.0+vec2(t*0.05,-t*0.03);vec2 gi=floor(g);vec2 gf=fract(g)-0.5;
+ vec2 jp=vec2(hash(gi),hash(gi+7.3))-0.5;jp+=0.25*vec2(sin(t*0.7+hash(gi)*6.0),cos(t*0.6+hash(gi+3.1)*6.0));
+ vec2 fd=gf-jp*0.7;float fl=exp(-dot(fd,fd)*900.0)*step(0.78,hash(gi+1.9));
+ float tw=0.5+0.5*sin(t*(2.0+3.0*hash(gi+5.0))+hash(gi)*20.0);
+ bg+=vec3(0.75,1.0,0.85)*fl*tw*(0.35+1.4*uHigh*I)*0.6;
+ /* patronus */
+ vec2 p=d0/uScale;p.x/=uFacing;
+ p+=(vec2(noise(p*7.0+t*0.8),noise(p*7.0-t*0.7+3.0))-0.5)*(0.012+0.035*uHigh*I);
+ float core=sprite(p);float aura=0.0;
+ for(int i=0;i<8;i++){float a=float(i)*0.785398+t*0.3;vec2 od=vec2(cos(a),sin(a));
+  aura+=sprite(p+od*(0.018+0.03*uFlash*I));aura+=sprite(p+od*(0.05+0.05*uBass*I))*0.6;}
+ aura/=12.8;
+ float breath=0.85+0.15*sin(t*1.7)+0.35*uLevel+0.9*uFlash*I;
+ float halo=exp(-dist*dist/(uScale*uScale*0.18))*0.22*breath;
+ vec3 glow=mix(uColB,vec3(1.0),clamp(core*0.8,0.0,1.0))*(core*1.15+aura)*breath+uColB*halo;
+ /* estela de chispas */
+ float trail=0.0;
+ for(int i=0;i<12;i++){float fi=float(i);float fade=1.0-fi/12.0;
+  vec2 tp=uTrail[i]+vec2(sin(fi*2.3+t*1.3),cos(fi*1.7+t*1.1))*0.010*fi;
+  vec2 dd=ca-tp;float r2=dot(dd,dd);float tk=0.55+0.45*sin(t*9.0+fi*1.9);
+  trail+=exp(-r2*14000.0/(1.0+fi*0.5))*fade*tk*(0.7+1.2*uHigh*I);
+  trail+=exp(-r2*220.0/uScale)*fade*0.025;}
+ glow+=mix(uColB,vec3(1.0),0.5)*trail;
  vec3 col=bg+glow;
- col+=(hash(gl_FragCoord.xy+uTime)-0.5)*0.015;
+ col=1.0-exp(-col*1.35);
+ col*=1.0-0.55*pow(length(uv-0.5)*1.3,2.2);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
 const FS_TEXT=`#version 300 es
@@ -320,7 +356,15 @@ function drawTextTexture(cue){const ctx=textCtx,W=1920,H=1080;ctx.clearRect(0,0,
   gl.bindTexture(gl.TEXTURE_2D,textTex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,textCanvas);}
 function cueAlpha(c,t){const a=c.t0,b=c.t0+c.fin,cc=b+c.hold,d=cc+c.fout;if(t<a||t>d)return 0;if(t<b)return (t-a)/c.fin;if(t<cc)return 1;return 1-(t-cc)/c.fout;}
 
-let actx,analyser,freqBuf,srcNode,buffer=null,msDest,startTime=0,playing=false,bassAvg=0,flash=0;
+let actx,analyser,freqBuf,srcNode,buffer=null,msDest,startTime=0,playing=false,bassAvg=0,flash=0,kickT=-99,facingS=1;
+const trailArr=new Float32Array(24);
+function songT(){return actx.currentTime-startTime;}
+/* recorrido del patronus: suma de senos no conmensurables -> no se repite en toda la cancion */
+function patPath(t){
+  const x=0.42*Math.sin(0.11*t+0.3)+0.16*Math.sin(0.27*t+1.1)+0.05*Math.sin(0.61*t+2.2);
+  const z=Math.min(1,Math.max(0,0.5+0.35*Math.sin(0.07*t+0.8)+0.15*Math.sin(0.17*t+2.4)));
+  const y=0.09*Math.sin(0.083*t+2.0)+0.045*Math.sin(0.21*t+0.5)-0.06+(1-z)*0.10+0.012*Math.sin(t*2.1);
+  return {x,y,z};}
 async function loadAudio(file){if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();
   const ab=await file.arrayBuffer();buffer=await actx.decodeAudioData(ab);
   setStatus('Canción cargada ('+buffer.duration.toFixed(1)+'s). Previsualiza o graba.');}
@@ -328,7 +372,7 @@ function buildGraph(){srcNode=actx.createBufferSource();srcNode.buffer=buffer;
   analyser=actx.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=0.6;
   freqBuf=new Uint8Array(analyser.frequencyBinCount);msDest=actx.createMediaStreamDestination();
   srcNode.connect(analyser);analyser.connect(actx.destination);analyser.connect(msDest);}
-function startAudio(){buildGraph();srcNode.start(0);startTime=actx.currentTime;playing=true;
+function startAudio(){buildGraph();srcNode.start(0);startTime=actx.currentTime;playing=true;kickT=-99;facingS=(patPath(0.1).x-patPath(-0.1).x)>=0?1:-1;
   srcNode.onended=()=>{playing=false;if(recorder&&recorder.state==='recording')recorder.stop();};}
 function stopAudio(){try{srcNode&&srcNode.stop();}catch(e){}playing=false;}
 
@@ -338,13 +382,13 @@ function readAudio(){
   analyser.getByteFrequencyData(freqBuf);const n=freqBuf.length;
   const avg=(lo,hi)=>{let s=0,c=0;for(let i=lo;i<hi&&i<n;i++){s+=freqBuf[i];c++;}return c?s/c/255:0;};
   lastBass=avg(1,8);lastMid=avg(8,60);lastHigh=avg(60,260);lastLevel=avg(1,260);
-  bassAvg=bassAvg*0.9+lastBass*0.1;if(lastBass>bassAvg*1.35&&lastBass>0.28)flash=1.0;flash*=0.88;
+  bassAvg=bassAvg*0.9+lastBass*0.1;if(lastBass>bassAvg*1.35&&lastBass>0.28){if(flash<0.6)kickT=songT();flash=1.0;}flash*=0.88;
   for(let i=0;i<NB;i++){const f=Math.pow(i/NB,1.7);const idx=Math.min(n-1,2+Math.floor(f*(n*0.5)));specData[i]=freqBuf[idx];}
 }
 
 let t0=performance.now();
 function frame(){
-  const t=(performance.now()-t0)/1000;
+  const t=playing?songT():(performance.now()-t0)/1000;
   readAudio();
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D,specTex);
@@ -369,6 +413,14 @@ function frame(){
     if(L.uImg){gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,imgTex);gl.uniform1i(L.uImg,1);}
     if(L.uFgAspect)gl.uniform1f(L.uFgAspect,fgAspect);
     if(L.uHasFg)gl.uniform1f(L.uHasFg,hasFg?1.0:0.0);
+    if(L.uPos){const I=parseFloat(S('intensity').value),P=patPath(t);
+      const dx=patPath(t+0.1).x-patPath(t-0.1).x;facingS+=((dx>=0?1:-1)-facingS)*0.07;
+      const f=Math.sign(facingS||1)*Math.max(Math.abs(facingS),0.12)*(S('flipFg').checked?-1:1);
+      gl.uniform2f(L.uPos,P.x,P.y);gl.uniform1f(L.uFacing,f);
+      gl.uniform1f(L.uScale,(0.30+0.32*P.z)*(1+0.07*lastBass*I+0.05*flash*I));
+      gl.uniform1f(L.uKickAge,playing?Math.max(0,t-kickT):10.0);
+      for(let i=0;i<12;i++){const q=patPath(t-0.18*(i+1));trailArr[2*i]=q.x;trailArr[2*i+1]=q.y;}
+      gl.uniform2fv(L.uTrail,trailArr);}
     if(L.uFg){gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,fgTex);gl.uniform1i(L.uFg,2);}
     if(L.uSpec){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,specTex);gl.uniform1i(L.uSpec,0);}
     gl.disable(gl.BLEND);gl.drawArrays(gl.TRIANGLES,0,3);
@@ -412,13 +464,15 @@ S('audio').onchange=async e=>{const f=e.target.files[0];if(!f)return;
 S('image').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Image();
   img.onload=()=>{imgAspect=img.width/img.height;gl.bindTexture(gl.TEXTURE_2D,imgTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
-    hasImg=true;S('style').value='image';setStatus('Imagen cargada. Previsualiza o graba en estilo “Imagen”.');URL.revokeObjectURL(img.src);};
+    hasImg=true;if(S('style').value!=='patronus')S('style').value='image';setStatus('Imagen cargada. Previsualiza o graba en estilo “Imagen”.');URL.revokeObjectURL(img.src);};
   img.onerror=()=>showErr('No se pudo cargar la imagen.');img.src=URL.createObjectURL(f);};
 S('image2').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Image();
   img.onload=()=>{fgAspect=img.width/img.height;gl.bindTexture(gl.TEXTURE_2D,fgTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
-    hasFg=true;S('style').value='patronus';setStatus('Patronus cargado. Carga también el fondo (Imagen 1) y dale a Previsualizar.');URL.revokeObjectURL(img.src);};
+    hasFg=true;if(S('style').value!=='patronus'){S('style').value='patronus';applyPreset();}setStatus('Patronus cargado. Carga también el fondo (Imagen 1) y dale a Previsualizar.');URL.revokeObjectURL(img.src);};
   img.onerror=()=>showErr('No se pudo cargar la imagen 2.');img.src=URL.createObjectURL(f);};
+function applyPreset(){if(S('style').value==='patronus'){S('colA').value='#0b1d3a';S('colB').value='#dff1ff';}}
+S('style').onchange=applyPreset;
 async function ensureCtx(){if(actx&&actx.state==='suspended')await actx.resume();}
 S('play').onclick=async()=>{if(!buffer){setStatus('Primero carga una canción.');return;}
   await ensureCtx();cues=parseCues();activeCueId=-1;stopAudio();startAudio();S('stop').disabled=false;setStatus('Previsualizando…');};
