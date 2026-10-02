@@ -123,7 +123,7 @@ let gl, scenes={}, textProg, ut={}, specTex, textTex, textCanvas, textCtx, activ
 let imgTex, imgAspect=1, hasImg=false;
 let fgTex, fgAspect=1, hasFg=false;
 const NB=72, specData=new Uint8Array(NB);
-const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uFg','uFgAspect','uHasFg','uPos','uFacing','uScale','uKickAge','uTrail'];
+const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uFg','uFgAspect','uHasFg','uPos','uFacing','uScale','uKickAge','uTrail','uDepth','uTilt'];
 
 function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
   if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
@@ -242,14 +242,17 @@ void main(){
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
 const FS_PATRONUS=HEAD+`uniform sampler2D uImg;uniform sampler2D uFg;uniform float uImgAspect,uHasImg,uFgAspect,uHasFg;
-uniform vec2 uPos;uniform float uFacing,uScale,uKickAge;uniform vec2 uTrail[12];
+uniform vec2 uPos;uniform float uFacing,uScale,uKickAge,uDepth,uTilt;uniform vec2 uTrail[12];
 float fgS(vec2 p){vec2 q=vec2(p.x/uFgAspect,p.y)+0.5;
  if(q.x<0.0||q.x>1.0||q.y<0.0||q.y>1.0)return 0.0;
- vec3 s=texture(uFg,q).rgb;float v=max(s.r,max(s.g,s.b));return smoothstep(0.035,0.35,v)*v;}
-float sprite(vec2 p){if(uHasFg>0.5)return fgS(p);return exp(-dot(p,p)*40.0);}
+ vec3 s=texture(uFg,q).rgb;float v=max(s.r,max(s.g,s.b));
+ float e=smoothstep(0.0,0.10,q.x)*smoothstep(1.0,0.90,q.x)*smoothstep(0.0,0.10,q.y)*smoothstep(1.0,0.90,q.y);
+ return smoothstep(0.08,0.40,v)*v*e;}
+float sprite(vec2 p){if(uHasFg>0.5)return fgS(p);vec2 b=p*vec2(1.0,1.6);return exp(-dot(b,b)*30.0);}
 void main(){
  vec2 uv=gl_FragCoord.xy/uRes;float scrA=uRes.x/uRes.y;
  vec2 c=uv-0.5;vec2 ca=c*vec2(scrA,1.0);float I=uIntensity;float t=uTime;
+ float far=1.0-uDepth;
  /* camara: dolly lento + golpe de zoom en graves/kicks */
  float zoom=0.86+0.035*sin(t*0.031+0.4)-0.035*uBass*I-0.025*uFlash*I;
  vec2 cam=vec2(0.045*sin(t*0.023+1.0)+uPos.x*0.03/scrA,0.028*sin(t*0.019+2.0)+uPos.y*0.02);
@@ -263,45 +266,71 @@ void main(){
  vec3 bg=raw*vec3(0.62,0.85,0.78);
  bg=mix(night*0.35,bg,smoothstep(0.0,0.55,lum));
  bg*=0.72+0.25*uLevel;
+ float pulse=0.55+0.35*uLevel+1.1*uFlash*I;
  /* luz del patronus sobre el laberinto */
  vec2 d0=ca-uPos;float dist=length(d0);float sr=uScale*0.9;
- float spill=exp(-dist*dist/(sr*sr))*(0.55+0.35*uLevel+1.1*uFlash*I);
+ float spill=exp(-dist*dist/(sr*sr))*pulse;
  bg+=raw*uColB*spill*1.6+uColB*spill*0.04;
+ /* charco de luz en el suelo, bajo las patas: lo ancla al suelo */
+ vec2 fp=ca-(uPos+vec2(0.0,-uScale*0.36));
+ float pool=exp(-(fp.x*fp.x)/(uScale*uScale*0.30)-(fp.y*fp.y)/(uScale*uScale*0.012))*pulse;
+ bg+=raw*uColB*pool*2.2+uColB*pool*0.10;
  /* niebla en dos capas con parallax */
  vec2 mp=ca+cam*vec2(scrA,1.0);
  float m1=fbm(mp*1.6+vec2(t*0.018,t*0.004));
  float m2=fbm(mp*3.8+vec2(-t*0.034,t*0.011)+m1);
  float mist=smoothstep(0.38,0.95,m1*0.55+m2*0.45);
  mist*=(0.30+0.45*(1.0-uv.y))*(0.75+0.7*uMid*I);
- /* onda expansiva en cada kick */
  float ring=exp(-pow((dist-uKickAge*0.85)*12.0,2.0))*exp(-uKickAge*2.6)*I;
  vec3 mistCol=night*0.55+uColB*(spill*0.9+ring*1.4);
  bg=mix(bg,mistCol,mist*0.55)+uColB*ring*0.10;
- /* luciernagas que titilan con los agudos */
+ /* luciernagas */
  vec2 g=ca*9.0+vec2(t*0.05,-t*0.03);vec2 gi=floor(g);vec2 gf=fract(g)-0.5;
  vec2 jp=vec2(hash(gi),hash(gi+7.3))-0.5;jp+=0.25*vec2(sin(t*0.7+hash(gi)*6.0),cos(t*0.6+hash(gi+3.1)*6.0));
  vec2 fd=gf-jp*0.7;float fl=exp(-dot(fd,fd)*900.0)*step(0.78,hash(gi+1.9));
  float tw=0.5+0.5*sin(t*(2.0+3.0*hash(gi+5.0))+hash(gi)*20.0);
  bg+=vec3(0.75,1.0,0.85)*fl*tw*(0.35+1.4*uHigh*I)*0.6;
- /* patronus */
- vec2 p=d0/uScale;p.x/=uFacing;
- p+=(vec2(noise(p*7.0+t*0.8),noise(p*7.0-t*0.7+3.0))-0.5)*(0.012+0.035*uHigh*I);
- float core=sprite(p);float aura=0.0;
+ /* patronus: espiritu de luz, no pegatina */
+ vec2 p=d0/uScale;
+ float cs=cos(uTilt),sn=sin(uTilt);p=mat2(cs,sn,-sn,cs)*p;
+ p.x/=uFacing;
+ p+=(vec2(noise(p*6.0+t*0.9),noise(p*6.0-t*0.8+3.0))-0.5)*(0.018+0.04*uHigh*I);
+ float core=sprite(p);
+ /* contorno brillante (los patronus son mas luz en el borde que en el centro) */
+ float e1=0.010;
+ float sx=sprite(p+vec2(e1,0.0))-sprite(p-vec2(e1,0.0));
+ float sy=sprite(p+vec2(0.0,e1))-sprite(p-vec2(0.0,e1));
+ float rim=clamp(length(vec2(sx,sy))*2.2,0.0,1.0);
+ /* cuerpo translucido que fluye por dentro */
+ float flow=fbm(p*5.0+vec2(0.0,-t*0.7));
+ float body=core*(0.30+0.55*flow);
+ /* humo de luz que se desprende hacia arriba */
+ float smoke=0.0;
+ for(int k=1;k<=5;k++){float fk=float(k);
+  vec2 sp=p-vec2((noise(p*3.0+vec2(fk,t*0.5))-0.5)*0.08*fk,0.03*fk);
+  smoke+=sprite(sp)*(1.0-fk/6.0)*smoothstep(0.35,0.8,fbm(p*4.0+vec2(fk*1.3,-t*1.1)));}
+ smoke*=0.22;
+ float aura=0.0;
  for(int i=0;i<8;i++){float a=float(i)*0.785398+t*0.3;vec2 od=vec2(cos(a),sin(a));
-  aura+=sprite(p+od*(0.018+0.03*uFlash*I));aura+=sprite(p+od*(0.05+0.05*uBass*I))*0.6;}
+  aura+=sprite(p+od*(0.02+0.03*uFlash*I));aura+=sprite(p+od*(0.055+0.05*uBass*I))*0.6;}
  aura/=12.8;
- float breath=0.85+0.15*sin(t*1.7)+0.35*uLevel+0.9*uFlash*I;
- float halo=exp(-dist*dist/(uScale*uScale*0.18))*0.22*breath;
- vec3 glow=mix(uColB,vec3(1.0),clamp(core*0.8,0.0,1.0))*(core*1.15+aura)*breath+uColB*halo;
+ float flick=0.92+0.08*noise(vec2(t*7.0,1.0));
+ float breath=(0.85+0.15*sin(t*1.7)+0.35*uLevel+0.9*uFlash*I)*flick;
+ float halo=exp(-dist*dist/(uScale*uScale*0.18))*0.20*breath;
+ float light=(body+rim*1.25+aura*0.75+smoke)*breath;
+ vec3 glow=mix(uColB,vec3(1.0),clamp(rim+body,0.0,1.0)*0.6)*light+uColB*halo;
+ glow*=mix(1.0,0.6,far);
  /* estela de chispas */
  float trail=0.0;
  for(int i=0;i<12;i++){float fi=float(i);float fade=1.0-fi/12.0;
-  vec2 tp=uTrail[i]+vec2(sin(fi*2.3+t*1.3),cos(fi*1.7+t*1.1))*0.010*fi;
+  vec2 tp=uTrail[i]+vec2(sin(fi*2.3+t*1.3),cos(fi*1.7+t*1.1))*0.010*fi+vec2(0.0,0.004*fi);
   vec2 dd=ca-tp;float r2=dot(dd,dd);float tk=0.55+0.45*sin(t*9.0+fi*1.9);
   trail+=exp(-r2*14000.0/(1.0+fi*0.5))*fade*tk*(0.7+1.2*uHigh*I);
   trail+=exp(-r2*220.0/uScale)*fade*0.025;}
  glow+=mix(uColB,vec3(1.0),0.5)*trail;
  vec3 col=bg+glow;
+ /* cuando esta lejos, la niebla pasa por delante */
+ col=mix(col,mistCol,mist*0.35*far);
  col=1.0-exp(-col*1.35);
  col*=1.0-0.55*pow(length(uv-0.5)*1.3,2.2);
  col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
@@ -361,9 +390,11 @@ const trailArr=new Float32Array(24);
 function songT(){return actx.currentTime-startTime;}
 /* recorrido del patronus: suma de senos no conmensurables -> no se repite en toda la cancion */
 function patPath(t){
-  const x=0.42*Math.sin(0.11*t+0.3)+0.16*Math.sin(0.27*t+1.1)+0.05*Math.sin(0.61*t+2.2);
+  /* camina por el suelo: lejos = mas arriba (horizonte) y mas pequeno; cerca = abajo y grande */
   const z=Math.min(1,Math.max(0,0.5+0.35*Math.sin(0.07*t+0.8)+0.15*Math.sin(0.17*t+2.4)));
-  const y=0.09*Math.sin(0.083*t+2.0)+0.045*Math.sin(0.21*t+0.5)-0.06+(1-z)*0.10+0.012*Math.sin(t*2.1);
+  const x=(0.42*Math.sin(0.11*t+0.3)+0.16*Math.sin(0.27*t+1.1)+0.05*Math.sin(0.61*t+2.2))*(0.6+0.4*z);
+  const step=Math.abs(Math.sin(t*3.2));
+  const y=-0.24+(1-z)*0.30+0.010*step*(0.5+0.5*z);
   return {x,y,z};}
 async function loadAudio(file){if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();
   const ab=await file.arrayBuffer();buffer=await actx.decodeAudioData(ab);
@@ -417,7 +448,9 @@ function frame(){
       const dx=patPath(t+0.1).x-patPath(t-0.1).x;facingS+=((dx>=0?1:-1)-facingS)*0.07;
       const f=Math.sign(facingS||1)*Math.max(Math.abs(facingS),0.12)*(S('flipFg').checked?-1:1);
       gl.uniform2f(L.uPos,P.x,P.y);gl.uniform1f(L.uFacing,f);
-      gl.uniform1f(L.uScale,(0.30+0.32*P.z)*(1+0.07*lastBass*I+0.05*flash*I));
+      gl.uniform1f(L.uScale,(0.22+0.33*P.z)*(1+0.07*lastBass*I+0.05*flash*I));
+      if(L.uDepth)gl.uniform1f(L.uDepth,P.z);
+      if(L.uTilt){const P2=patPath(t+0.15);const sl=Math.atan2(P2.y-P.y,Math.abs(P2.x-P.x)+1e-4);gl.uniform1f(L.uTilt,Math.max(-0.12,Math.min(0.12,sl*0.5))*Math.sign(f)+0.025*Math.sin(t*6.4));}
       gl.uniform1f(L.uKickAge,playing?Math.max(0,t-kickT):10.0);
       for(let i=0;i<12;i++){const q=patPath(t-0.18*(i+1));trailArr[2*i]=q.x;trailArr[2*i+1]=q.y;}
       gl.uniform2fv(L.uTrail,trailArr);}
