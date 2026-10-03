@@ -18,6 +18,11 @@
   .sub{color:var(--mut);font-size:13px;margin:0 0 14px}
   .stage{position:relative;width:100%;aspect-ratio:16/9;background:#000;border:1px solid var(--line);border-radius:12px;overflow:hidden}
   canvas{width:100%;height:100%;display:block}
+  .seekwrap{position:relative;margin-top:8px;padding-top:12px}
+  #marks{position:absolute;left:0;right:0;top:0;height:12px}
+  #marks span{position:absolute;top:0;width:3px;height:11px;margin-left:-1px;border-radius:2px;cursor:pointer}
+  #marks span.c{background:#1fd1b2}#marks span.s{background:#d2b482}
+  #seek{width:100%;margin:0;accent-color:#1fd1b2;cursor:pointer}
   .timer{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);padding:5px 11px;border-radius:999px;font:600 13px ui-monospace,monospace;color:#fff;cursor:pointer;user-select:none;z-index:2}
   .timer:hover{background:rgba(31,209,178,.35)}
   .rec{position:absolute;top:10px;left:10px;display:none;align-items:center;gap:7px;background:rgba(0,0,0,.55);padding:5px 10px;border-radius:999px;font-size:12px}
@@ -48,13 +53,17 @@
 </head>
 <body>
 <div class="wrap">
-  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.15 · 18 estilos <span id="qual"></span></small></h1>
+  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.16 · 18 estilos <span id="qual"></span></small></h1>
   <p class="sub">Elige estilo, carga una canción, pon las palabras con su tiempo y graba. Render por GPU en tu navegador.</p>
 
   <div class="stage">
     <canvas id="gl" width="1920" height="1080"></canvas>
     <div class="timer" id="timer" title="Clic: apuntar este momento en Colores en el tiempo">0:00.0</div>
     <div class="rec" id="recPill"><span class="dot"></span><span id="recTime">REC 0:00</span></div>
+  </div>
+  <div class="seekwrap">
+    <div id="marks"></div>
+    <input type="range" id="seek" min="0" max="1" step="0.1" value="0" disabled title="Arrastra o haz clic para saltar a ese momento">
   </div>
 
   <div class="panel">
@@ -804,7 +813,14 @@ function analyzeSong(buf){
   return {energy:sm,sections:secs,bpm:6000/bestP,beatP:bestP/100,beatO:bestO/100};}
 let timerLast=0,lastSongT=0,seedSm=0;
 function clock(x){x=Math.max(0,x);const m=Math.floor(x/60),r=x-m*60;return m+':'+(r<10?'0':'')+r.toFixed(1);}
-function beatAt(t){if(!songMap||!playing)return t*2.0;return (t-songMap.beatO)/songMap.beatP;}
+function beatRaw(t){if(!songMap)return t*2.0;return (t-songMap.beatO)/songMap.beatP;}
+function beatAt(t){if(!playing)return t*2.0;return beatRaw(t);}
+/* recalcula el avance acumulado hasta T, para que saltar deje la animacion igual que reproduciendo desde el principio */
+function flowAt(T){let fB=0,fE=0;const I=parseFloat(S('intensity').value),bk=songMap?songMap.bpm/120:1,h=0.05;
+  for(let x=0;x<T;x+=h){const st=Math.min(h,T-x),E=songMap?songMap.energy[Math.max(0,Math.min(songMap.energy.length-1,Math.floor(x/0.1)))]:0.5;
+    const ph=beatRaw(x),fr=ph-Math.floor(ph),surge=1+0.3*Math.pow(0.5+0.5*Math.cos(6.2831853*fr),3)*I;
+    fB+=st*bk*(0.75+0.5*E)*surge;fE+=st*bk*(0.6+0.6*E)*surge;}
+  return [fB,fE];}
 function secAt(t){if(!songMap||!playing)return {i:0,t0:0};const S2=songMap.sections;let i=0;while(i+1<S2.length&&S2[i+1].t<=t)i++;return {i,t0:S2[i].t};}
 function energyAt(t){if(!songMap||!playing)return 0.5;const k=Math.max(0,Math.min(songMap.energy.length-1,Math.floor(t/0.1)));return songMap.energy[k];}
 function parseCol(tok){tok=(tok||'').trim().toLowerCase();if(PRESETS[tok])return PRESETS[tok].map(hexToRGB);
@@ -824,7 +840,7 @@ function parseColorCues(){const out=[],bad=[];
     if(isNaN(t)||!c){bad.push(li+1);return;}
     out.push({t0:t,A:c[0],B:c[1],dur,name:rest});});
   colBad=bad;return out.sort((x,y)=>x.t0-y.t0);}
-function colFeedback(){const el=S('colFb');if(!el)return;
+function colFeedback(){drawMarks();const el=S('colFb');if(!el)return;
   if(!colorCues.length&&!colBad.length){el.textContent='';return;}
   el.innerHTML=(colorCues.length?'✓ '+colorCues.length+' cambio(s): '+colorCues.map(c=>'<code>'+fmtT(c.t0)+' '+c.name+'</code>').join(' → '):'')+
     (colBad.length?' <span class="err">⚠ No entiendo la(s) línea(s) '+colBad.join(', ')+' (usa p. ej. <code>1:20 | neon | fundido 2</code>)</span>':'');}
@@ -841,12 +857,13 @@ function genColorCues(){if(!songMap){setStatus('Primero carga una canción.');re
 async function loadAudio(file){if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();
   const ab=await file.arrayBuffer();buffer=await actx.decodeAudioData(ab);
   try{songMap=analyzeSong(buffer);}catch(e){songMap=null;}
+  S('seek').max=buffer.duration.toFixed(1);S('seek').value=0;S('seek').disabled=false;lastSongT=0;colorCues=parseColorCues();sceneCues=parseSceneCues();drawMarks();
   setStatus('Canción cargada ('+fmtT(buffer.duration)+'). '+(songMap?'Tempo '+Math.round(songMap.bpm)+' BPM · '+songMap.sections.length+' secciones ('+songMap.sections.filter(x=>x.drop).length+' drops). ':'')+'Previsualiza o graba.');}
 function buildGraph(){srcNode=actx.createBufferSource();srcNode.buffer=buffer;
   analyser=actx.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=0.3;
   freqBuf=new Uint8Array(analyser.frequencyBinCount);msDest=actx.createMediaStreamDestination();
   srcNode.connect(analyser);analyser.connect(actx.destination);analyser.connect(msDest);}
-function startAudio(){clearFB();buildGraph();srcNode.start(0);startTime=actx.currentTime;playing=true;kickT=-99;flowB=0;flowE=0;
+function startAudio(off=0){off=Math.max(0,Math.min(off,buffer.duration-0.05));clearFB();buildGraph();srcNode.start(0,off);startTime=actx.currentTime-off;playing=true;kickT=-99;[flowB,flowE]=flowAt(off);lastSongT=off;
   const node=srcNode;node.onended=()=>{if(node!==srcNode)return;playing=false;
     if(recorder&&recorder.state==='recording')recorder.stop();else{resetButtons();setStatus('Fin de la canción. Puedes previsualizar o grabar otra vez.');}};}
 function stopAudio(){try{srcNode&&srcNode.stop();}catch(e){}playing=false;}
@@ -922,7 +939,7 @@ function parseSceneCues(){const out=[],bad=[];
     if(isNaN(t)||(style===null&&seed===null)){bad.push(li+1);return;}
     out.push({t0:t,style,seed,dur});});
   sceneBad=bad;return out.sort((x,y)=>x.t0-y.t0);}
-function sceneFeedback(){const el=S('sceneFb');if(!el)return;
+function sceneFeedback(){drawMarks();const el=S('sceneFb');if(!el)return;
   if(!sceneCues.length&&!sceneBad.length){el.textContent='';return;}
   el.innerHTML=(sceneCues.length?'✓ '+sceneCues.length+' cambio(s): '+sceneCues.map(c=>'<code>'+(fmtT(c.t0)+' '+(c.style?styleName(c.style):'')+(c.seed!==null?' forma '+c.seed:'')).replace(/\s+/g,' ')+'</code>').join(' → '):'')+
     (sceneBad.length?' <span class="err">⚠ No entiendo la(s) línea(s) '+sceneBad.join(', ')+' (usa p. ej. <code>1:20 | nebulosa | fundido 3</code> o <code>2:00 | forma 2</code>)</span>':'');}
@@ -943,7 +960,7 @@ function sceneState(t,dt){
 function frame(){
   const now=performance.now(),dt=Math.min(0.1,Math.max(0.001,(now-lastNow)/1000));lastNow=now;
   const t=playing?songT():(now-t0)/1000;
-  if(now-timerLast>90){timerLast=now;if(playing)lastSongT=t;const tm=S('timer');if(tm)tm.textContent=clock(lastSongT)+(buffer?' / '+clock(buffer.duration).replace(/\.\d$/,''):'')+(playing&&sceneCues.length?' · '+curSceneName:'');}
+  if(now-timerLast>90){timerLast=now;if(playing){lastSongT=t;if(!seeking)S('seek').value=t;}const tm=S('timer');if(tm)tm.textContent=clock(lastSongT)+(buffer?' / '+clock(buffer.duration).replace(/\.\d$/,''):'')+(playing&&sceneCues.length?' · '+curSceneName:'');}
   readAudio(dt);
   /* calidad automatica: si no llega a ~60 fps baja la resolucion interna; si sobra, la sube */
   emaDt=emaDt*0.93+dt*0.07;qTimer+=dt;
@@ -996,7 +1013,7 @@ async function onRecStop(){clearInterval(recTimer);S('recPill').style.display='n
   S('saveMsg').innerHTML='Si no se descargó solo, aquí lo tienes: clic derecho → “Guardar vídeo como…”.';
   resetButtons();}
 
-function resetButtons(){S('play').disabled=false;S('record').disabled=false;S('stop').disabled=true;}
+function resetButtons(){S('play').disabled=false;S('record').disabled=false;S('stop').disabled=true;S('seek').disabled=!buffer;}
 S('intensity').oninput=e=>S('intV').textContent=parseFloat(e.target.value).toFixed(2);
 S('audio').onchange=async e=>{const f=e.target.files[0];if(!f)return;
   try{setStatus('Decodificando audio…');await loadAudio(f);}catch(err){showErr('Error al cargar audio:\n'+err.message);}};
@@ -1005,6 +1022,18 @@ S('image').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Ima
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
     hasImg=true;S('style').value='image';clearFB();setStatus('Imagen cargada. Previsualiza o graba en estilo “Imagen”.');URL.revokeObjectURL(img.src);};
   img.onerror=()=>showErr('No se pudo cargar la imagen.');img.src=URL.createObjectURL(f);};
+let seeking=false;
+function seekTo(x){if(!buffer)return;x=Math.max(0,Math.min(x,buffer.duration-0.1));
+  if(recorder&&recorder.state==='recording'){setStatus('Durante la grabación no se puede saltar.');return;}
+  ensureCtx().then(()=>{if(!playing){cues=parseCues();colorCues=parseColorCues();colFeedback();sceneCues=parseSceneCues();sceneFeedback();playBaseStyle=S('style').value;}
+    activeCueId=-1;stopAudio();startAudio(x);S('stop').disabled=false;S('seek').value=x;setStatus('Previsualizando desde '+fmtT(Math.round(x*10)/10)+'…');});}
+function drawMarks(){const m=S('marks');if(!m)return;m.innerHTML='';if(!buffer)return;const D=buffer.duration;
+  const add=(t,cls,tip)=>{if(t<0||t>D)return;const e=document.createElement('span');e.className=cls;e.style.left=(t/D*100)+'%';e.title=tip;e.onclick=()=>seekTo(t-1);m.appendChild(e);};
+  colorCues.forEach(c=>add(c.t0,'c','Color '+fmtT(c.t0)+' · '+c.name));sceneCues.forEach(c=>add(c.t0,'s','Escena '+fmtT(c.t0)+' · '+(c.style?styleName(c.style):'')+(c.seed!==null?' forma '+c.seed:'')));}
+S('seek').addEventListener('input',()=>{seeking=true;const tm=S('timer');if(tm)tm.textContent='→ '+clock(+S('seek').value);});
+S('seek').addEventListener('change',()=>{seeking=false;seekTo(+S('seek').value);});
+document.addEventListener('keydown',e=>{const tg=(e.target.tagName||'').toLowerCase();if(tg==='textarea'||tg==='input'||tg==='select'||!buffer)return;
+  if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();seekTo((playing?songT():lastSongT)+(e.key==='ArrowRight'?5:-5));}});
 S('genCols').onclick=()=>{genColorCues();colorCues=parseColorCues();colFeedback();};
 S('sceneCues').addEventListener('input',()=>{sceneCues=parseSceneCues();sceneFeedback();});
 S('markScene').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('sceneCues');ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+fmtT(tt)+' | forma 1 | fundido 2';sceneCues=parseSceneCues();sceneFeedback();setStatus('Apuntado '+fmtT(tt)+' en Escenas en el tiempo.');};
@@ -1029,7 +1058,7 @@ S('play').onclick=async()=>{if(!buffer){setStatus('Primero carga una canción.')
   await ensureCtx();cues=parseCues();colorCues=parseColorCues();colFeedback();sceneCues=parseSceneCues();sceneFeedback();playBaseStyle=S('style').value;activeCueId=-1;stopAudio();startAudio();S('stop').disabled=false;setStatus('Previsualizando…');};
 S('record').onclick=async()=>{if(!buffer){setStatus('Primero carga una canción.');return;}
   await ensureCtx();cues=parseCues();colorCues=parseColorCues();colFeedback();sceneCues=parseSceneCues();sceneFeedback();playBaseStyle=S('style').value;activeCueId=-1;S('saveZone').style.display='none';
-  stopAudio();startAudio();startRec();S('play').disabled=true;S('record').disabled=true;S('stop').disabled=false;
+  stopAudio();startAudio();startRec();S('play').disabled=true;S('record').disabled=true;S('seek').disabled=true;S('stop').disabled=false;
   setStatus('🔴 Grabando la canción entera… no cambies de pestaña. Parará sola al acabar.');};
 S('stop').onclick=()=>{stopAudio();if(recorder&&recorder.state==='recording')recorder.stop();else resetButtons();setStatus('Parado.');};
 
