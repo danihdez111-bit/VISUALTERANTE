@@ -46,7 +46,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.5 · 9 estilos</small></h1>
+  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.6 · 13 estilos</small></h1>
   <p class="sub">Elige estilo, carga una canción, pon las palabras con su tiempo y graba. Render por GPU en tu navegador.</p>
 
   <div class="stage">
@@ -69,6 +69,10 @@
           <option value="nebula">Nebulosa (galaxia)</option>
           <option value="ridges">Montañas de espectro 3D</option>
           <option value="blob">Metal líquido 3D</option>
+          <option value="flight">Vuelo nocturno 3D</option>
+          <option value="fractal">Túnel fractal 3D</option>
+          <option value="ink">Tinta líquida</option>
+          <option value="aurora">Aurora boreal</option>
         </select>
       </div>
       <div>
@@ -169,6 +173,7 @@ vec3 palette(float t){t=clamp(t,0.0,1.0);
  vec3 c=mix(uColA,uColB,smoothstep(0.08,0.72,t));
  c=mix(c,vec3(1.0,0.97,0.92),smoothstep(0.80,1.0,t));
  c*=mix(0.12,1.0,smoothstep(0.0,0.5,t));return c;}
+mat2 rot(float a){float c=cos(a),s=sin(a);return mat2(c,-s,s,c);}
 vec2 coverUV(vec2 c,float imgA,float scrA){vec2 iuv=c;if(imgA>scrA)iuv.x*=scrA/imgA;else iuv.y*=imgA/scrA;return iuv+0.5;}
 `;
 
@@ -187,18 +192,27 @@ const FS_TUNNEL=HEAD+`void main(){
  col*=1.0-0.72*pow(clamp(r*0.92,0.0,1.0),2.2);col+=(hash(gl_FragCoord.xy+uTime)-0.5)*0.025;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
-const FS_KALEIDO=HEAD+`void main(){
- vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float r=length(uv);float a=atan(uv.y,uv.x);
- float seg=6.0;a=abs(mod(a,6.28318/seg)-(3.14159/seg));
- float zoom=1.0+0.25*sin(uTime*0.2)+uBass*0.7*uIntensity;
- vec2 p=vec2(cos(a),sin(a))*r*zoom;
- float pl=0.5+0.5*sin(p.x*8.0+uTime)+0.5*sin(p.y*8.0-uTime*0.7);
- float tx=fbm(p*3.0+uTime*0.1);
- float lum=clamp(0.3*pl+0.6*tx,0.0,1.0)*(0.5+0.9*uLevel);
- vec3 col=palette(lum);
- col+=palette(0.9)*exp(-r*4.0)*(0.3+uHigh);
- col+=vec3(1.0,0.95,0.86)*uFlash*exp(-r*3.0)*1.3*uIntensity;
- col*=1.0-0.6*pow(clamp(r*0.9,0.0,1.0),2.0);
+const FS_KALEIDO=HEAD+`uniform float uKickAge;
+vec3 layer(vec2 uv,float z,float t,float I){
+ float sc=mix(6.0,0.35,z);vec2 p=uv*sc;
+ float seg=8.0;float a=atan(p.y,p.x)+t*0.04+0.25*uBass*I*sin(z*6.28);float r=length(p);
+ float s=6.2831853/seg;a=abs(mod(a,s)-0.5*s);p=vec2(cos(a),sin(a))*r;
+ vec2 q=p+vec2(fbm(p*0.8+t*0.05),fbm(p*0.8-t*0.04))*1.2;
+ float f=fbm(q*1.5+z*7.0);
+ float facet=abs(sin(q.x*3.0+f*4.0))*abs(sin(q.y*3.0-f*3.0));
+ float edges=smoothstep(0.08,0.0,facet);
+ vec3 c=palette(0.1+0.8*f)*(0.12+0.9*f*f);
+ c+=palette(0.95)*edges*(0.25+1.3*uHigh*I)*(0.4+f);
+ return c;}
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;float r=length(uv);
+ vec3 col=vec3(0.0);
+ for(int k=0;k<4;k++){float z=fract(t*0.045+float(k)*0.25);float w=sin(z*3.14159);col+=layer(uv,z,t+float(k)*13.0,I)*w*w*0.6;}
+ col*=0.5+0.9*uLevel;
+ col+=palette(0.95)*exp(-pow((r-uKickAge*0.9)*9.0,2.0))*exp(-uKickAge*2.8)*0.35*I+vec3(1.0,0.95,0.9)*uFlash*exp(-r*3.0)*0.5*I;
+ col*=1.0-0.45*pow(r*0.9,2.2);
+ col=1.0-exp(-col*1.3);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
 const FS_SYNTH=HEAD+`void main(){
@@ -485,6 +499,134 @@ void main(){
  col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
+const FS_FLIGHT=HEAD+`uniform float uKickAge;
+float tn(vec2 p){float a=0.0,b=0.5;mat2 m=mat2(1.6,1.2,-1.2,1.6);for(int i=0;i<5;i++){float n=noise(p);a+=b*(1.0-abs(n*2.0-1.0));p=m*p;b*=0.5;}return a;}
+float H(vec2 p){return tn(p*0.35)*2.4-0.8;}
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;
+ float z0=t*1.5;vec3 ro=vec3(2.5*sin(t*0.045),0.0,z0);
+ ro.y=max(H(ro.xz),H(ro.xz+vec2(0.0,1.5)))+1.1+0.25*sin(t*0.11)+0.12*uBass*I;
+ vec3 ta=vec3(2.5*sin((t+1.5)*0.045),ro.y-0.45,z0+2.5);
+ vec3 fw=normalize(ta-ro);float rl=0.12*sin(t*0.07);
+ vec3 rt=normalize(cross(vec3(sin(rl),cos(rl),0.0),fw));vec3 up=cross(fw,rt);
+ vec3 rd=normalize(fw*1.5+uv.x*rt+uv.y*up);
+ vec3 L=normalize(vec3(-0.5,0.35,0.8));float mo=dot(rd,L);
+ /* cielo: degradado, luna, estrellas, relampago en cada kick */
+ vec3 sky=mix(uColA*0.14,uColA*0.02,clamp(rd.y*2.0,0.0,1.0));
+ sky+=palette(0.95)*smoothstep(0.9990,0.9994,mo)+palette(0.7)*pow(max(mo,0.0),60.0)*0.4*(0.6+uLevel);
+ vec2 sg=vec2(atan(rd.x,rd.z),rd.y)*70.0;vec2 gi=floor(sg);vec2 gf=fract(sg)-0.5;
+ sky+=vec3(0.85,0.9,1.0)*smoothstep(0.12,0.0,length(gf-(vec2(hash(gi),hash(gi+4.0))-0.5)*0.6))*step(0.9,hash(gi+1.0))*smoothstep(0.02,0.2,rd.y)*(0.5+uHigh*1.5*I);
+ sky+=palette(0.95)*uFlash*I*0.3*smoothstep(-0.05,0.4,rd.y);
+ float tt=0.05;bool hit=false;
+ for(int i=0;i<72;i++){vec3 p=ro+rd*tt;float h=p.y-H(p.xz);if(h<0.002*tt){hit=true;break;}tt+=h*0.5;if(tt>45.0)break;}
+ vec3 col=sky;
+ if(hit){vec3 p=ro+rd*tt;float e=0.02;
+  vec3 n=normalize(vec3(H(p.xz-vec2(e,0.0))-H(p.xz+vec2(e,0.0)),2.0*e,H(p.xz-vec2(0.0,e))-H(p.xz+vec2(0.0,e))));
+  float dif=max(dot(n,L),0.0);float rim=pow(1.0-max(dot(-rd,n),0.0),3.0);
+  vec3 alb=mix(uColA*0.10,palette(0.35)*0.55,smoothstep(-0.2,1.0,p.y));
+  alb=mix(alb,palette(0.98)*0.9,smoothstep(1.0,1.5,p.y+n.y*0.4)*0.8);
+  col=alb*(0.02+0.85*dif*dif)+palette(0.8)*rim*0.15;
+  /* curvas de nivel de neon que fluyen con los medios */
+  float cl=p.y*7.0-t*0.6;float lw=fwidth(cl)*1.3+0.01;float dl=abs(fract(cl+0.5)-0.5);
+  col+=palette(0.85)*(1.0-smoothstep(0.0,lw,dl))*(0.15+1.5*uMid*I)*exp(-tt*0.06);
+  col+=palette(0.95)*uFlash*I*(0.2+0.6*dif);
+  float fog=1.0-exp(-tt*0.075);
+  col=mix(col,uColA*0.18+palette(0.7)*pow(max(mo,0.0),8.0)*0.25,fog);}
+ float r=length(uv);
+ col*=1.0-0.45*pow(r*0.9,2.2);
+ col=1.0-exp(-col*1.35);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
+ o=vec4(clamp(col,0.0,1.0),1.0);}`;
+
+const FS_FRACTAL=HEAD+`uniform float uKickAge;
+float map(vec3 p){float t=uTime,I=uIntensity;
+ p.xy*=rot(p.z*0.12+t*0.03);
+ vec3 q=p;q.z=mod(q.z+2.0,4.0)-2.0;
+ for(int i=0;i<4;i++){q=abs(q)-vec3(1.0,0.8,0.7);q.xy*=rot(0.62+0.12*sin(t*0.07+float(i)));q.yz*=rot(0.41+0.08*cos(t*0.05));}
+ float th=0.03+0.05*uBass*I;
+ float d=length(max(abs(q)-vec3(th,th,0.9),0.0))-0.008;
+ return max(d,0.6-length(p.xy));}
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;
+ vec3 ro=vec3(0.15*sin(t*0.3),0.15*cos(t*0.23),t*1.6);
+ vec2 dv=uv*rot(0.1*sin(t*0.1)+t*0.02);
+ vec3 rd=normalize(vec3(dv,1.2-0.15*uFlash*I));
+ float tt=0.0;vec3 acc=vec3(0.0);
+ for(int i=0;i<64;i++){vec3 p=ro+rd*tt;float d=map(p);
+  vec3 c=palette(0.45+0.45*sin(p.z*0.15+t*0.1));
+  acc+=c*exp(-max(d,0.0)*14.0)*0.035*exp(-tt*0.08);
+  if(d<0.002){acc+=c*0.6*exp(-tt*0.08);break;}
+  tt+=max(d*0.75,0.02);if(tt>30.0)break;}
+ vec3 col=acc*(0.7+0.8*uLevel+1.4*uFlash*I);
+ float r=length(uv);
+ col+=palette(0.9)*exp(-r*4.0)*(0.08+0.5*uBass*I);
+ col+=palette(0.95)*exp(-pow((r-uKickAge*0.9)*9.0,2.0))*exp(-uKickAge*2.8)*0.3*I;
+ vec2 g=gl_FragCoord.xy/5.0;col+=palette(0.95)*step(0.993,hash(floor(g)+floor(t*15.0)))*uHigh*1.5*I*smoothstep(0.1,0.6,r);
+ col*=1.0-0.45*pow(r*0.9,2.2);
+ col=1.0-exp(-col*1.3);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
+ o=vec4(clamp(col,0.0,1.0),1.0);}`;
+
+const FS_INK=HEAD+`uniform float uKickAge;
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;float r=length(uv);
+ vec2 p=uv*1.4;
+ p+=normalize(uv+1e-4)*exp(-pow((r-uKickAge*0.8)*7.0,2.0))*exp(-uKickAge*1.8)*0.35*I;
+ p*=rot((0.5+1.4*uBass*I)*exp(-r*1.3)+t*0.03);
+ for(int i=1;i<7;i++){float fi=float(i);
+  p+=vec2(0.6/fi*sin(fi*p.y*1.25+t*0.21+fi*1.7+0.6*uMid*I),0.6/fi*cos(fi*p.x*1.1-t*0.19+fi*0.9));}
+ float d1=0.5+0.5*sin(p.x*1.3+p.y*0.7);
+ float d2=fbm(p*1.3+vec2(t*0.03,-t*0.02));
+ float ink=smoothstep(0.25,0.85,d1*0.55+d2*0.65);
+ float ink2=smoothstep(0.55,0.95,0.5+0.5*sin(p.y*2.1-p.x*0.8+d2*3.0));
+ vec3 bg=mix(uColA*0.05,uColA*0.12,uv.y+0.5);
+ vec3 col=mix(bg,uColA*0.9,ink);
+ col=mix(col,uColB*1.1,ink2*ink);
+ col+=vec3(1.0)*pow(ink2*ink,6.0)*0.4;
+ /* relieve: la tinta tiene volumen y brillo */
+ float hg=ink+ink2*0.5;vec2 gr=vec2(dFdx(hg),dFdy(hg))*30.0;float sm=smoothstep(0.9,0.25,length(gr));vec3 n=normalize(vec3(-gr*sm,1.0));
+ vec3 L=normalize(vec3(-0.4,0.5,0.75));float spec=pow(max(dot(reflect(-L,n),vec3(0.0,0.0,1.0)),0.0),24.0);
+ col*=0.85+0.25*max(dot(n,L),0.0);
+ col+=palette(0.95)*spec*sm*(0.25+0.8*uLevel);
+ vec2 g=gl_FragCoord.xy/6.0;col+=palette(0.95)*step(0.994,hash(floor(g)+floor(t*12.0)))*ink*uHigh*2.0*I;
+ col+=palette(0.9)*uFlash*I*0.25*exp(-r*2.0);
+ col*=1.0-0.45*pow(r*0.9,2.2);
+ col=1.0-exp(-col*1.3);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
+ o=vec4(clamp(col,0.0,1.0),1.0);}`;
+
+const FS_AURORA=HEAD+`uniform float uKickAge;
+vec3 aur(vec3 rd,float t,float I){vec3 c=vec3(0.0);float dz=hash(gl_FragCoord.xy+fract(t));
+ for(int i=0;i<24;i++){float fi=float(i)+dz;float pt=(1.0+fi*0.06)/max(rd.y,0.02);vec2 q=rd.xz*pt;
+  q.x+=t*0.03;
+  float w=fbm(q*0.35+vec2(t*0.02,0.0));
+  float v=sin(q.x*0.9+w*5.0+t*0.15);
+  float cur=pow(1.0-abs(v),6.0);
+  float sp=texture(uSpec,vec2(fract(q.x*0.04+0.5),0.5)).r;
+  vec3 cc=mix(palette(0.55),palette(0.95),fi/24.0);
+  c+=cc*cur*exp(-fi*0.12)*(0.45+1.6*sp*I)*0.15;}
+ return c*smoothstep(0.0,0.15,rd.y)*(1.0+uFlash*1.5*I);}
+float mount(float x,float t){return 0.035+0.11*fbm(vec2(x*2.2+t*0.004,3.0))+0.03*fbm(vec2(x*9.0,7.0));}
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;
+ float hor=-0.2;bool refl=uv.y<hor;vec2 su=uv;
+ if(refl){float rp=exp(-pow((length((uv-vec2(0.0,hor))*vec2(1.0,4.0))-uKickAge*0.7)*10.0,2.0))*exp(-uKickAge*2.0)*I;
+  su.y=2.0*hor-uv.y+0.006*sin(uv.y*160.0+t*2.0)*(1.0+uBass*2.0*I)+0.02*rp;
+  su.x+=0.004*sin(uv.y*90.0-t*1.5);}
+ vec3 rd=normalize(vec3(su.x,su.y-hor+0.02,1.0));rd.xz*=rot(t*0.01);
+ vec3 col=mix(uColA*0.07,uColA*0.01,clamp(rd.y*1.5,0.0,1.0));
+ vec2 sg=su*60.0;vec2 gi=floor(sg);vec2 gf=fract(sg)-0.5;
+ col+=vec3(0.85,0.9,1.0)*smoothstep(0.1,0.0,length(gf-(vec2(hash(gi),hash(gi+4.0))-0.5)*0.6))*step(0.88,hash(gi+1.0))*(0.6+0.4*sin(t*2.0+hash(gi)*20.0))*(0.6+uHigh*1.5*I);
+ vec3 a=aur(rd,t,I);col+=a;
+ float m=hor+mount(su.x,t);
+ if(su.y<m){col=uColA*0.02+a*0.05+palette(0.6)*0.03*smoothstep(m-0.03,m,su.y)*(0.5+uLevel);}
+ if(refl)col*=0.5;
+ float r=length(uv);
+ col*=1.0-0.4*pow(r*0.9,2.2);
+ col=1.0-exp(-col*1.4);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
+ o=vec4(clamp(col,0.0,1.0),1.0);}`;
+
 const FS_TEXT=`#version 300 es
 precision highp float;uniform sampler2D uTex;uniform float uAlpha;in vec2 vUv;out vec4 o;
 void main(){vec4 t=texture(uTex,vUv);o=vec4(t.rgb,t.a*uAlpha);}`;
@@ -494,7 +636,7 @@ function makeScene(fs){const prog=program(VS,fs);const loc={};for(const n of UNA
 function initGL(){
   const c=S('gl');gl=c.getContext('webgl2',{preserveDrawingBuffer:true,alpha:false});
   if(!gl)throw new Error('Tu navegador no soporta WebGL2.');
-  const defs={tunnel:FS_TUNNEL,kaleido:FS_KALEIDO,synth:FS_SYNTH,particles:FS_PARTICLES,image:FS_IMAGE,patronus:FS_PATRONUS,nebula:FS_NEBULA,ridges:FS_RIDGES,blob:FS_BLOB};
+  const defs={tunnel:FS_TUNNEL,kaleido:FS_KALEIDO,synth:FS_SYNTH,particles:FS_PARTICLES,image:FS_IMAGE,patronus:FS_PATRONUS,nebula:FS_NEBULA,ridges:FS_RIDGES,blob:FS_BLOB,flight:FS_FLIGHT,fractal:FS_FRACTAL,ink:FS_INK,aurora:FS_AURORA};
   const failed=[];
   for(const k in defs){try{scenes[k]=makeScene(defs[k]);}catch(e){failed.push(k+': '+e.message);
     const opt=[...S('style').options].find(o=>o.value===k);if(opt)opt.remove();}}
