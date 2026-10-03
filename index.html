@@ -66,6 +66,9 @@
           <option value="particles">Partículas</option>
           <option value="image">Imagen</option>
           <option value="patronus">Patronus (2 capas)</option>
+          <option value="nebula">Nebulosa (galaxia)</option>
+          <option value="ridges">Montañas de espectro 3D</option>
+          <option value="blob">Metal líquido 3D</option>
         </select>
       </div>
       <div>
@@ -139,7 +142,8 @@ let gl, scenes={}, textProg, ut={}, specTex, textTex, textCanvas, textCtx, activ
 let imgTex, imgAspect=1, hasImg=false;
 let fgTex, fgAspect=1, hasFg=false;
 const NB=72, specData=new Uint8Array(NB);
-const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uFg','uFgAspect','uHasFg','uPos','uFacing','uScale','uKickAge','uTrail','uDepth','uTilt','uPD','uFgBot','uHasDep','uDep'];
+let histTex,histRow=0,histLast=0;
+const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uFg','uFgAspect','uHasFg','uPos','uFacing','uScale','uKickAge','uTrail','uDepth','uTilt','uPD','uFgBot','uHasDep','uDep','uHist','uHistRow'];
 
 function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
   if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
@@ -368,6 +372,119 @@ void main(){
  col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
+const FS_NEBULA=HEAD+`uniform float uKickAge;
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime;float I=uIntensity;
+ float ang=t*0.013+0.2*sin(t*0.031);mat2 R=mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
+ vec2 p=R*uv*(1.0-0.12*uBass*I-0.05*uFlash*I);
+ vec3 col=vec3(0.0);
+ /* estrellas en 3 capas de profundidad */
+ for(int L=0;L<3;L++){float fl=float(L);float sc=7.0+fl*9.0;
+  vec2 q=p*sc+vec2(t*(0.04+fl*0.06),t*0.011*(fl+1.0));
+  vec2 id=floor(q);vec2 f=fract(q)-0.5;float h=hash(id+fl*17.0);
+  vec2 o2=vec2(hash(id+3.1),hash(id+7.7))-0.5;float d=length(f-o2*0.7);
+  float star=smoothstep(0.07/(1.0+fl*0.6),0.0,d)*step(0.72,h);
+  float tw=0.6+0.4*sin(t*(1.0+h*4.0)+h*30.0);
+  col+=vec3(0.8,0.9,1.0)*star*tw*(0.5+fl*0.35)*(1.0+uHigh*2.5*I);}
+ /* nebulosa: deformacion de dominio en 3 niveles */
+ vec2 w=p*1.6;
+ vec2 q1=vec2(fbm(w+vec2(0.0,t*0.02)),fbm(w+vec2(5.2,1.3)-t*0.015));
+ vec2 q2=vec2(fbm(w+3.0*q1+vec2(1.7,9.2)+t*0.03),fbm(w+3.0*q1+vec2(8.3,2.8)));
+ float n=fbm(w+3.5*q2+uMid*I*0.6);
+ float dens=smoothstep(0.35,0.95,n)*(0.55+1.0*uLevel);
+ vec3 neb=mix(uColA,uColB,clamp(q2.x*1.2,0.0,1.0));
+ neb=mix(neb,vec3(1.0,0.92,0.96),smoothstep(0.75,1.0,n)*0.6);
+ col+=neb*dens*1.3;
+ col*=0.5+0.5*smoothstep(0.2,0.6,fbm(w*2.3+q1*2.0));
+ /* galaxia central: brazos espirales + nucleo que late con los graves */
+ float r=length(uv);float a=atan(uv.y,uv.x);
+ float arms=pow(0.5+0.5*sin(a*2.0-log(r+1e-3)*6.0+t*0.3),6.0)*exp(-r*2.5)*0.45*(0.5+uLevel);
+ float core=exp(-r*r*30.0)*(0.18+uBass*1.1*I);
+ col+=palette(0.85)*arms+vec3(1.0,0.95,0.9)*core;
+ /* kick: destello + onda expansiva */
+ float ring=exp(-pow((r-uKickAge*0.9)*10.0,2.0))*exp(-uKickAge*2.5)*I;
+ col+=palette(0.95)*ring*0.8+vec3(1.0,0.95,0.9)*uFlash*exp(-r*3.0)*0.6*I;
+ col*=1.0-0.5*pow(r*0.9,2.2);
+ col=1.0-exp(-col*1.3);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
+ o=vec4(clamp(col,0.0,1.0),1.0);}`;
+
+const FS_RIDGES=HEAD+`uniform sampler2D uHist;uniform float uHistRow,uKickAge;
+float histAt(float f,int age){int row=int(mod(uHistRow-float(age)+64.0,64.0));float x=clamp(f,0.0,1.0)*71.0;int xi=int(x);
+ float a=texelFetch(uHist,ivec2(xi,row),0).r,b=texelFetch(uHist,ivec2(min(xi+1,71),row),0).r;return mix(a,b,fract(x));}
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;
+ float sw=0.03*sin(t*0.05);uv=mat2(cos(sw),-sin(sw),sin(sw),cos(sw))*uv;
+ uv*=1.0-0.04*uFlash*I;
+ float px=1.0/uRes.y;
+ /* cielo + estrellas + luna */
+ vec3 col=mix(uColA*0.04,uColA*0.22,smoothstep(0.0,0.5,uv.y));
+ vec2 g=uv*40.0+vec2(t*0.2,0.0);vec2 gi=floor(g);vec2 gf=fract(g)-0.5;
+ col+=vec3(0.85,0.9,1.0)*smoothstep(0.08,0.0,length(gf-(vec2(hash(gi),hash(gi+5.0))-0.5)*0.6))*step(0.86,hash(gi+2.0))*(0.5+uHigh*1.5*I)*smoothstep(0.0,0.2,uv.y);
+ vec2 sp=uv-vec2(0.38*sin(t*0.01+1.0),0.27);float sd=length(sp);
+ col+=palette(0.9)*smoothstep(0.10+0.025*uBass*I,0.09,sd)*0.9+palette(0.7)*exp(-sd*6.0)*0.3*(0.5+uLevel);
+ /* cordillera: cada linea es un instante de la musica; la mas cercana es el ahora */
+ float camH=0.55+0.05*sin(t*0.07);float hor=0.06;
+ vec3 acc=vec3(0.0);float covered=0.0;
+ for(int i=0;i<48;i++){
+  float z=0.9+float(i)*0.22;
+  float X=uv.x*z+0.15*sin(t*0.04);float f=abs(X)/1.6;
+  float h=f<1.0?histAt(f,i):0.0;
+  h=pow(h,1.5)*(0.8+0.5*I)*(1.0-0.45*f)*(0.5+0.5*smoothstep(0.0,0.14,f));
+  h+=0.05*fbm(vec2(X*2.5,float(i)*0.35+t*0.05));
+  float y=hor+(-camH+h*0.48)/z;
+  float fade=exp(-float(i)*0.05);
+  vec3 c=palette(0.35+h*0.85)*fade*(1.0+uFlash*1.2*I);
+  float w=px*(1.2+1.5/z);
+  if(uv.y<y){acc+=c*smoothstep(w*2.0,0.0,y-uv.y)*1.4;acc+=uColA*0.025*fade;covered=1.0;break;}
+  acc+=c*smoothstep(w*3.0,0.0,uv.y-y)*1.1;
+ }
+ if(covered>0.5)col=acc+uColA*0.015;else col+=acc;
+ float r=length(uv);
+ col+=palette(0.95)*exp(-pow((r-uKickAge*0.9)*9.0,2.0))*exp(-uKickAge*2.8)*0.35*I;
+ col*=1.0-0.45*pow(r*0.9,2.2);
+ col=1.0-exp(-col*1.4);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
+ o=vec4(clamp(col,0.0,1.0),1.0);}`;
+
+const FS_BLOB=HEAD+`uniform float uKickAge;
+float smin(float a,float b,float k){float h=clamp(0.5+0.5*(b-a)/k,0.0,1.0);return mix(b,a,h)-k*h*(1.0-h);}
+float map(vec3 p){float t=uTime,I=uIntensity;float d=1e5;
+ for(int i=0;i<5;i++){float fi=float(i);
+  vec3 c=vec3(sin(t*0.37*(1.0+fi*0.13)+fi*1.7)*1.1,cos(t*0.29*(1.0+fi*0.11)+fi*2.3)*0.7,sin(t*0.23*(1.0+fi*0.07)+fi*0.9)*0.8);
+  float r=0.42+0.08*sin(fi*3.0+t*0.7)+(i==0?0.35:0.12)*uBass*I;
+  d=smin(d,length(p-c)-r,0.55);}
+ d+=0.035*sin(p.x*7.0+t*1.7)*sin(p.y*7.0-t*1.3)*sin(p.z*7.0+t)*(0.4+2.0*uMid*I);
+ return d;}
+vec3 sky(vec3 rd){float y=rd.y;vec3 c=mix(uColA*0.2,uColB*0.6,smoothstep(-0.4,0.8,y));
+ c+=vec3(1.0,0.96,0.92)*pow(max(0.0,sin(atan(rd.z,rd.x)*3.0+uTime*0.2)),40.0)*smoothstep(-0.1,0.4,y)*1.6;
+ c+=vec3(1.0)*smoothstep(0.97,1.0,dot(rd,normalize(vec3(0.4,0.8,-0.3))))*2.0;
+ c+=uColA*0.5*smoothstep(0.0,-0.6,y);
+ return c;}
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;
+ float an=t*0.09;vec3 ro=vec3(sin(an)*5.6,0.7+0.6*sin(t*0.05),cos(an)*5.6)*(1.0-0.07*uFlash*I-0.04*uBass*I);
+ vec3 fw=normalize(-ro);vec3 rt=normalize(cross(vec3(0,1,0),fw));vec3 up=cross(fw,rt);
+ vec3 rd=normalize(fw*1.9+uv.x*rt+uv.y*up);
+ float d=1.0,tt=0.0,md=1e5;bool hit=false;
+ for(int i=0;i<56;i++){d=map(ro+rd*tt);md=min(md,d);if(d<0.002){hit=true;break;}tt+=d*0.9;if(tt>12.0)break;}
+ vec3 col=mix(uColA*0.05,uColB*0.08,uv.y+0.5);
+ vec2 g=uv*14.0+vec2(t*0.03,t*0.02);vec2 gi=floor(g);vec2 gf=fract(g)-0.5;
+ col+=palette(0.8)*smoothstep(0.25,0.0,length(gf))*step(0.9,hash(gi))*0.25*(0.5+uHigh*2.0*I);
+ col+=palette(0.85)*exp(-md*7.0)*(0.12+0.45*uLevel+0.8*uFlash*I);
+ if(hit){vec3 p=ro+rd*tt;vec2 e=vec2(0.002,0.0);
+  vec3 n=normalize(vec3(map(p+e.xyy)-map(p-e.xyy),map(p+e.yxy)-map(p-e.yxy),map(p+e.yyx)-map(p-e.yyx)));
+  vec3 rf=reflect(rd,n);float fr=pow(1.0-max(dot(-rd,n),0.0),3.0);
+  col=sky(rf)*(0.35+0.65*fr)+palette(0.5+0.5*n.y)*0.12;
+  col+=palette(0.95)*fr*(0.25+uHigh*1.5*I);
+  col+=vec3(1.0,0.95,0.9)*uFlash*(0.3+fr)*0.9*I;}
+ float r=length(uv);
+ col+=palette(0.95)*exp(-pow((r-uKickAge*0.9)*9.0,2.0))*exp(-uKickAge*2.8)*0.3*I;
+ col*=1.0-0.45*pow(r*0.9,2.2);
+ col=1.0-exp(-col*1.3);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
+ o=vec4(clamp(col,0.0,1.0),1.0);}`;
+
 const FS_TEXT=`#version 300 es
 precision highp float;uniform sampler2D uTex;uniform float uAlpha;in vec2 vUv;out vec4 o;
 void main(){vec4 t=texture(uTex,vUv);o=vec4(t.rgb,t.a*uAlpha);}`;
@@ -377,10 +494,13 @@ function makeScene(fs){const prog=program(VS,fs);const loc={};for(const n of UNA
 function initGL(){
   const c=S('gl');gl=c.getContext('webgl2',{preserveDrawingBuffer:true,alpha:false});
   if(!gl)throw new Error('Tu navegador no soporta WebGL2.');
-  const defs={tunnel:FS_TUNNEL,kaleido:FS_KALEIDO,synth:FS_SYNTH,particles:FS_PARTICLES,image:FS_IMAGE,patronus:FS_PATRONUS};
+  const defs={tunnel:FS_TUNNEL,kaleido:FS_KALEIDO,synth:FS_SYNTH,particles:FS_PARTICLES,image:FS_IMAGE,patronus:FS_PATRONUS,nebula:FS_NEBULA,ridges:FS_RIDGES,blob:FS_BLOB};
   const failed=[];
   for(const k in defs){try{scenes[k]=makeScene(defs[k]);}catch(e){failed.push(k+': '+e.message);
     const opt=[...S('style').options].find(o=>o.value===k);if(opt)opt.remove();}}
+  histTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,histTex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.R8,NB,64,0,gl.RED,gl.UNSIGNED_BYTE,new Uint8Array(NB*64));
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
   textProg=program(VS,FS_TEXT);for(const n of ['uTex','uAlpha'])ut[n]=gl.getUniformLocation(textProg,n);
   specTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,specTex);
   gl.texImage2D(gl.TEXTURE_2D,0,gl.R8,NB,1,0,gl.RED,gl.UNSIGNED_BYTE,specData);
@@ -508,6 +628,10 @@ function frame(){
     if(L.uImg){gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,imgTex);gl.uniform1i(L.uImg,1);}
     if(L.uFgAspect)gl.uniform1f(L.uFgAspect,fgAspect);
     if(L.uHasFg)gl.uniform1f(L.uHasFg,hasFg?1.0:0.0);
+    if(L.uKickAge)gl.uniform1f(L.uKickAge,playing?Math.max(0,t-kickT):10.0);
+    if(L.uHist){if(t-histLast>1/40||t<histLast){histLast=t;histRow=(histRow+1)%64;gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D,histTex);
+        gl.texSubImage2D(gl.TEXTURE_2D,0,0,histRow,NB,1,gl.RED,gl.UNSIGNED_BYTE,specData);}
+      gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D,histTex);gl.uniform1i(L.uHist,4);gl.uniform1f(L.uHistRow,histRow);}
     if(L.uPos){const I=parseFloat(S('intensity').value),P=pathAt(t);
       const dx=pathAt(t+0.1).bx-pathAt(t-0.1).bx;if(Math.abs(dx)>1e-5)facingS+=((dx>=0?1:-1)-facingS)*0.07;
       const f=Math.sign(facingS||1)*Math.max(Math.abs(facingS),0.12)*(S('flipFg').checked?-1:1);
