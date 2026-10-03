@@ -46,7 +46,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.7 · 16 estilos</small></h1>
+  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.8 · 19 estilos</small></h1>
   <p class="sub">Elige estilo, carga una canción, pon las palabras con su tiempo y graba. Render por GPU en tu navegador.</p>
 
   <div class="stage">
@@ -64,6 +64,9 @@
           <option value="opart">Op-Art hipnótico</option>
           <option value="kali">Portal fractal</option>
           <option value="gyroid">Gyroid infinito</option>
+          <option value="mirror">Espejo infinito (eco)</option>
+          <option value="paint">Pintura de la música (eco)</option>
+          <option value="glitch">Glitch / datamosh (eco)</option>
           </optgroup>
           <optgroup label="Clásicos">
           <option value="tunnel">Túnel retro</option>
@@ -135,7 +138,7 @@
       <div class="btns" style="margin-top:4px"><button id="genCols">🎨 Generar desde la canción</button>
         <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:12.5px;color:var(--txt)"><input type="checkbox" id="liveCol" checked style="width:auto"> Colores vivos (respiran con la música)</label></div>
       <textarea id="colCues" style="min-height:70px;margin-top:8px" placeholder="0:00 | noche | corte&#10;0:32 | neon | corte&#10;1:04 | #ff3b00 #ffd36b | fundido 4"></textarea>
-      <div class="hint">Paletas: <code>noche</code> <code>fuego</code> <code>neon</code> <code>acido</code> <code>hielo</code> <code>sangre</code> <code>oro</code> <code>vapor</code> <code>toxico</code> <code>ocaso</code> <code>oceano</code> <code>violeta</code> <code>mono</code> <code>selva</code>, o dos colores <code>#rrggbb #rrggbb</code>. <b>corte</b> = cambio brusco; <b>fundido N</b> = transición de N segundos. Sin líneas se usan Color A/B. El botón detecta las secciones y drops de la canción y te lo rellena.</div>
+      <div class="hint">Paletas: <code>noche</code> <code>fuego</code> <code>neon</code> <code>acido</code> <code>hielo</code> <code>sangre</code> <code>oro</code> <code>vapor</code> <code>toxico</code> <code>ocaso</code> <code>oceano</code> <code>violeta</code> <code>mono</code> <code>selva</code>, o dos colores <code>#rrggbb #rrggbb</code>. <b>corte</b> = cambio brusco; <b>fundido N</b> = transición de N segundos. Sin líneas se usan Color A/B. El botón detecta las secciones y drops de la canción y te lo rellena.<br>⌨️ <b>En directo:</b> mientras suena, pulsa <code>1</code>…<code>9</code>, <code>0</code> para cambiar de paleta (con <b>Mayús</b> = corte brusco). Cada cambio se apunta aquí para que la próxima grabación lo repita.<br><code>1</code> noche · <code>2</code> fuego · <code>3</code> neon · <code>4</code> acido · <code>5</code> hielo · <code>6</code> sangre · <code>7</code> oro · <code>8</code> vapor · <code>9</code> toxico · <code>0</code> violeta</div>
     </div>
 
     <div class="btns">
@@ -162,7 +165,7 @@ let imgTex, imgAspect=1, hasImg=false;
 let fgTex, fgAspect=1, hasFg=false;
 const NB=72, specData=new Uint8Array(NB);
 let histTex,histRow=0,histLast=0;
-const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uFg','uFgAspect','uHasFg','uPos','uFacing','uScale','uKickAge','uTrail','uDepth','uTilt','uPD','uFgBot','uHasDep','uDep','uHist','uHistRow','uSeed','uSecT','uEnergy'];
+const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uFg','uFgAspect','uHasFg','uPos','uFacing','uScale','uKickAge','uTrail','uDepth','uTilt','uPD','uFgBot','uHasDep','uDep','uHist','uHistRow','uSeed','uSecT','uEnergy','uPrev'];
 
 function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
   if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
@@ -728,16 +731,107 @@ void main(){
  col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
+const FS_MIRROR=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSeed,uSecT,uEnergy;
+void main(){
+ float A=uRes.x/uRes.y;vec2 uv=gl_FragCoord.xy/uRes;vec2 c=(uv-0.5)*vec2(A,1.0);float t=uTime,I=uIntensity;
+ float zoom=0.985-0.022*uBass*I-0.012*uEnergy;
+ float dir=mod(uSeed,2.0)<1.0?1.0:-1.0;
+ float ang=dir*(0.004+0.008*sin(t*0.07+uSeed))*(1.0+uMid*2.5*I);
+ vec2 q=(c*rot(ang))*zoom;
+ float seg=3.0+mod(uSeed,4.0);float s=6.2831853/seg;float qa=atan(q.y,q.x);qa=abs(mod(qa,s)-0.5*s);
+ q=mix(q,vec2(cos(qa),sin(qa))*length(q),0.75+0.2*sin(t*0.05+uSeed));
+ q+=0.0025*vec2(sin(c.y*11.0+t*1.3),cos(c.x*9.0-t))*(1.0+uHigh*4.0*I);
+ vec3 prev=texture(uPrev,q/vec2(A,1.0)+0.5).rgb;
+ prev=prev*(0.962-0.02*(1.0-uLevel))-0.002;
+ float r=length(c);float a=atan(c.y,c.x);
+ float sp=texture(uSpec,vec2(0.05+abs(a/6.2831853)*1.9,0.5)).r;
+ float R0=0.05+0.05*uBass*I;
+ float ring=smoothstep(0.007,0.0,abs(r-R0-sp*0.14*I));
+ vec3 inj=palette(0.45+0.55*sp)*ring*(0.7+uLevel);
+ float n=3.0+mod(uSeed,3.0);float pa=6.2831853/n;
+ float pd=abs(r*cos(mod(a-t*0.4*(1.0+uBass*I),pa)-0.5*pa)-(0.13+0.12*uMid*I));
+ inj+=palette(0.75)*smoothstep(0.004,0.0,pd)*(0.35+1.2*uMid*I);
+ float spk=smoothstep(0.02,0.0,abs(fract(a/6.2831853*24.0+t*0.05)-0.5)*0.5)*step(r,0.05+sp*0.5*I)*step(0.03,r);
+ inj+=palette(0.5+0.5*sp)*spk*0.25*uHigh*2.0*I;
+ float k=smoothstep(0.012,0.0,abs(r-0.03-uKickAge*0.7))*exp(-uKickAge*4.0)*I;
+ inj+=palette(0.95)*k;
+ vec3 col=max(prev,vec3(0.0))+inj;
+ o=vec4(min(col,vec3(1.4)),1.0);}`;
+
+const FS_PAINT=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSeed,uSecT,uEnergy;
+vec2 flowv(vec2 p,float t){float e=0.02;vec2 o2=vec2(0.0,t*0.05)+uSeed*3.1;
+ float n1=fbm(p*1.5+o2),nx=fbm(p*1.5+vec2(e,0.0)+o2),ny=fbm(p*1.5+vec2(0.0,e)+o2);
+ return vec2(ny-n1,-(nx-n1))/e;}
+void main(){
+ float A=uRes.x/uRes.y;vec2 uv=gl_FragCoord.xy/uRes;vec2 c=(uv-0.5)*vec2(A,1.0);float t=uTime,I=uIntensity;
+ vec2 v=flowv(c,t)*(0.0015+0.005*uBass*I+0.002*uEnergy);
+ vec3 col=texture(uPrev,(c-v)/vec2(A,1.0)+0.5).rgb*(0.993-0.012*uFlash*I)-0.0012;
+ col=max(col,vec3(0.0));
+ for(int i=0;i<6;i++){float fi=float(i);
+  vec2 bp=vec2(0.75*sin(t*(0.21+fi*0.05)+fi*2.1+uSeed),0.4*sin(t*(0.17+fi*0.043)+fi*1.3+uSeed*0.5));
+  float band=i<2?uBass:(i<4?uMid:uHigh);
+  float sz=0.02+0.055*band*I;
+  float m=smoothstep(sz,sz*0.2,length(c-bp));
+  vec3 bc=palette(0.25+0.75*fract(0.17*fi+t*0.015+uSeed*0.21));
+  col=mix(col,bc,m*0.55);}
+ float kid=floor((t-uKickAge)*10.0);
+ vec2 kp=(vec2(hash(vec2(kid,1.0)),hash(vec2(kid,2.0)))-0.5)*vec2(1.5,0.8);
+ float kd=length(c-kp);
+ col=mix(col,palette(0.95),smoothstep(0.03+uKickAge*0.3,0.0,kd)*exp(-uKickAge*8.0)*0.7*I);
+ o=vec4(min(col,vec3(1.2)),1.0);}`;
+
+const FS_GLITCH=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSeed,uSecT,uEnergy;
+void main(){
+ vec2 uv=gl_FragCoord.xy/uRes;float t=uTime,I=uIntensity;float A=uRes.x/uRes.y;
+ vec2 bs=vec2(48.0,27.0)/(1.0+floor(mod(uSeed,3.0)));
+ vec2 bid=floor(uv*bs);float h=hash(bid+floor(t*2.0));
+ vec2 mv=(vec2(hash(bid+3.1+floor(t*0.5)),hash(bid+7.7+floor(t*0.5)))-0.5)*0.005*(0.3+uMid*3.0*I);
+ mv.x+=step(0.92,h)*0.02*uHigh*I*sign(h-0.96);
+ vec2 pu=uv-mv;float sh=0.0015+0.01*uFlash*I;
+ vec3 prev=vec3(texture(uPrev,pu+vec2(sh,0.0)).r,texture(uPrev,pu).g,texture(uPrev,pu-vec2(sh,0.0)).b);
+ prev=max(prev*0.986-0.001,vec3(0.0));
+ vec2 c=(uv-0.5)*vec2(A,1.0);
+ float sp=texture(uSpec,vec2(abs(uv.x-0.5)*1.8+0.04,0.5)).r;
+ float bars=step(abs(uv.y-0.5)*2.0,sp*sp*0.9*I)*step(0.35,fract(uv.x*60.0));
+ float circ=smoothstep(0.012,0.0,abs(length(c)-0.14-0.12*uBass*I));
+ float tri=smoothstep(0.01,0.0,abs(max(abs(c.x)*0.866+c.y*0.5,-c.y)-0.22-0.08*uMid*I));
+ vec3 src=palette(0.4+0.6*sp)*bars*0.8+palette(0.95)*circ+palette(0.7)*tri*step(1.0,mod(uSeed,2.0));
+ float fn=fbm(c*2.5+vec2(t*0.15,-t*0.1)+uSeed*4.0);
+ vec3 key=palette(fn)*(0.25+0.75*smoothstep(0.3,0.8,fn))+src;
+ float kf=floor(t-uKickAge+0.5);
+ float refresh=step(hash(bid+kf*1.37),exp(-uKickAge*3.0)*0.65*I);
+ vec3 col=mix(prev+src*0.12,key+prev*0.2,refresh);
+ col+=palette(hash(bid))*step(0.996,h)*uHigh*1.5*I;
+ col*=0.93+0.07*sin(gl_FragCoord.y*3.14159);
+ o=vec4(min(col,vec3(1.2)),1.0);}`;
+
+const FS_BLIT=`#version 300 es
+precision highp float;uniform sampler2D uTex;in vec2 vUv;out vec4 o;
+void main(){o=vec4(clamp(texture(uTex,vUv).rgb,0.0,1.0),1.0);}`;
 const FS_TEXT=`#version 300 es
 precision highp float;uniform sampler2D uTex;uniform float uAlpha;in vec2 vUv;out vec4 o;
 void main(){vec4 t=texture(uTex,vUv);o=vec4(t.rgb,t.a*uAlpha);}`;
 
 function makeScene(fs){const prog=program(VS,fs);const loc={};for(const n of UNAMES)loc[n]=gl.getUniformLocation(prog,n);return {prog,loc};}
 
+/* ===== Retroalimentacion: dos buffers que se alternan (cada imagen se pinta sobre la anterior) ===== */
+const FEEDBACK={mirror:1,paint:1,glitch:1};
+let fb=[],fbTex=[],fbIdx=0,blitProg,ubTex;
+function initFB(){const ext=gl.getExtension('EXT_color_buffer_float');
+  for(let i=0;i<2;i++){const tx=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tx);
+    if(ext)gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,1920,1080,0,gl.RGBA,gl.HALF_FLOAT,null);
+    else gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,1920,1080,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    const f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tx,0);
+    fb.push(f);fbTex.push(tx);}
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  blitProg=program(VS,FS_BLIT);ubTex=gl.getUniformLocation(blitProg,'uTex');clearFB();}
+function clearFB(){if(!fb.length)return;for(const f of fb){gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);}gl.bindFramebuffer(gl.FRAMEBUFFER,null);}
 function initGL(){
   const c=S('gl');gl=c.getContext('webgl2',{preserveDrawingBuffer:true,alpha:false});
   if(!gl)throw new Error('Tu navegador no soporta WebGL2.');
-  const defs={tunnel:FS_TUNNEL,kaleido:FS_KALEIDO,synth:FS_SYNTH,particles:FS_PARTICLES,image:FS_IMAGE,patronus:FS_PATRONUS,nebula:FS_NEBULA,ridges:FS_RIDGES,blob:FS_BLOB,flight:FS_FLIGHT,fractal:FS_FRACTAL,ink:FS_INK,aurora:FS_AURORA,opart:FS_OPART,kali:FS_KALI,gyroid:FS_GYROID};
+  const defs={tunnel:FS_TUNNEL,kaleido:FS_KALEIDO,synth:FS_SYNTH,particles:FS_PARTICLES,image:FS_IMAGE,patronus:FS_PATRONUS,nebula:FS_NEBULA,ridges:FS_RIDGES,blob:FS_BLOB,flight:FS_FLIGHT,fractal:FS_FRACTAL,ink:FS_INK,aurora:FS_AURORA,opart:FS_OPART,kali:FS_KALI,gyroid:FS_GYROID,mirror:FS_MIRROR,paint:FS_PAINT,glitch:FS_GLITCH};
   const failed=[];
   for(const k in defs){try{scenes[k]=makeScene(defs[k]);}catch(e){failed.push(k+': '+e.message);
     const opt=[...S('style').options].find(o=>o.value===k);if(opt)opt.remove();}}
@@ -762,6 +856,7 @@ function initGL(){
   gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0,255]));
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  initFB();
   if(failed.length) showErr('Algún estilo no compiló (los demás funcionan):\n'+failed.join('\n'));
 }
 function hexToRGB(h){const n=parseInt(h.slice(1),16);return [((n>>16)&255)/255,((n>>8)&255)/255,(n&255)/255];}
@@ -873,7 +968,7 @@ function buildGraph(){srcNode=actx.createBufferSource();srcNode.buffer=buffer;
   analyser=actx.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=0.6;
   freqBuf=new Uint8Array(analyser.frequencyBinCount);msDest=actx.createMediaStreamDestination();
   srcNode.connect(analyser);analyser.connect(actx.destination);analyser.connect(msDest);}
-function startAudio(){buildGraph();srcNode.start(0);startTime=actx.currentTime;playing=true;kickT=-99;facingS=(pathAt(0.1).bx-pathAt(-0.1).bx)>=0?1:-1;
+function startAudio(){clearFB();buildGraph();srcNode.start(0);startTime=actx.currentTime;playing=true;kickT=-99;facingS=(pathAt(0.1).bx-pathAt(-0.1).bx)>=0?1:-1;
   const node=srcNode;node.onended=()=>{if(node!==srcNode)return;playing=false;
     if(recorder&&recorder.state==='recording')recorder.stop();else{resetButtons();setStatus('Fin de la canción. Puedes previsualizar o grabar otra vez.');}};}
 function stopAudio(){try{srcNode&&srcNode.stop();}catch(e){}playing=false;}
@@ -896,7 +991,8 @@ function frame(){
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D,specTex);
   gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,NB,1,gl.RED,gl.UNSIGNED_BYTE,specData);
-  const sc=scenes[S('style').value]||scenes.tunnel;
+  const sc=scenes[S('style').value]||scenes.tunnel;const isFB=!!FEEDBACK[S('style').value]&&fb.length===2;
+  if(isFB){gl.bindFramebuffer(gl.FRAMEBUFFER,fb[1-fbIdx]);}
   if(sc){
     gl.viewport(0,0,1920,1080);gl.useProgram(sc.prog);const L=sc.loc;
     if(L.uRes)gl.uniform2f(L.uRes,1920,1080);
@@ -937,7 +1033,10 @@ function frame(){
       gl.uniform2fv(L.uTrail,trailArr);}
     if(L.uFg){gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,fgTex);gl.uniform1i(L.uFg,2);}
     if(L.uSpec){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,specTex);gl.uniform1i(L.uSpec,0);}
+    if(L.uPrev){gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,fbTex[fbIdx]);gl.uniform1i(L.uPrev,5);}
     gl.disable(gl.BLEND);gl.drawArrays(gl.TRIANGLES,0,3);
+    if(isFB){gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,1920,1080);gl.useProgram(blitProg);
+      gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,fbTex[1-fbIdx]);gl.uniform1i(ubTex,5);gl.drawArrays(gl.TRIANGLES,0,3);fbIdx=1-fbIdx;}
   }
   if(playing){const et=actx.currentTime-startTime;let act=-1,alpha=0;
     for(let i=0;i<cues.length;i++){const a=cueAlpha(cues[i],et);if(a>0){act=i;alpha=a;break;}}
@@ -1010,7 +1109,15 @@ S('gl').parentElement.addEventListener('click',e=>{if(!editPath)return;const r=S
   waypoints.push([cx*k.zoom+k.x,cy*k.zoom+k.y]);syncPathTxt();buildPath();});
 try{const sv=localStorage.getItem('vt_path');if(sv){S('pathTxt').value=sv;parsePathTxt();}}catch(e){}
 function applyPreset(){if(S('style').value==='patronus'){S('colA').value='#0b1d3a';S('colB').value='#dff1ff';}}
-S('style').onchange=applyPreset;
+S('style').onchange=()=>{applyPreset();clearFB();};
+/* atajos: 1-9 y 0 cambian de paleta en directo (Mayus = corte brusco). Se apuntan en 'Colores en el tiempo' */
+const KEYPAL=['violeta','noche','fuego','neon','acido','hielo','sangre','oro','vapor','toxico'];
+document.addEventListener('keydown',e=>{const tg=(e.target.tagName||'').toLowerCase();if(tg==='textarea'||tg==='input'||tg==='select')return;
+  const m=e.code&&e.code.match(/^Digit(\d)$/);if(!m)return;const name=KEYPAL[+m[1]];const P=PRESETS[name].map(hexToRGB);
+  if(playing){const t=songT(),dur=e.shiftKey?0:0.6;colorCues.push({t0:t,A:P[0],B:P[1],dur});colorCues.sort((x,y)=>x.t0-y.t0);
+    const ta=S('colCues');ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+fmtT(Math.round(t*10)/10)+' | '+name+' | '+(dur?'fundido 0.6':'corte');
+    setStatus('🎨 '+name+(dur?'':' (corte)')+' en '+fmtT(Math.round(t*10)/10)+' — apuntado en Colores en el tiempo');}
+  else{S('colA').value=PRESETS[name][0];S('colB').value=PRESETS[name][1];setStatus('Paleta '+name);}});
 async function ensureCtx(){if(actx&&actx.state==='suspended')await actx.resume();}
 S('play').onclick=async()=>{if(!buffer){setStatus('Primero carga una canción.');return;}
   await ensureCtx();cues=parseCues();colorCues=parseColorCues();activeCueId=-1;stopAudio();startAudio();S('stop').disabled=false;setStatus('Previsualizando…');};
