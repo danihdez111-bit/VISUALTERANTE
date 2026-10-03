@@ -46,12 +46,11 @@
 </head>
 <body>
 <div class="wrap">
-  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.8 · 19 estilos</small></h1>
+  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.9 · 18 estilos <span id="qual"></span></small></h1>
   <p class="sub">Elige estilo, carga una canción, pon las palabras con su tiempo y graba. Render por GPU en tu navegador.</p>
 
   <div class="stage">
     <canvas id="gl" width="1920" height="1080"></canvas>
-    <canvas id="ov" width="1920" height="1080" style="position:absolute;inset:0;pointer-events:none"></canvas>
     <div class="rec" id="recPill"><span class="dot"></span><span id="recTime">REC 0:00</span></div>
   </div>
 
@@ -74,7 +73,6 @@
           <option value="synth">Synthwave</option>
           <option value="particles">Partículas</option>
           <option value="image">Imagen</option>
-          <option value="patronus">Patronus (2 capas)</option>
           <option value="nebula">Nebulosa (galaxia)</option>
           <option value="ridges">Montañas de espectro 3D</option>
           <option value="blob">Metal líquido 3D</option>
@@ -90,21 +88,8 @@
         <input type="file" id="audio" accept="audio/*">
       </div>
       <div>
-        <label>Imagen 1 · foto / fondo (laberinto)</label>
+        <label>Imagen (solo estilo “Imagen”)</label>
         <input type="file" id="image" accept="image/*">
-      </div>
-      <div>
-        <label>Imagen 2 · patronus (sobre negro)</label>
-        <input type="file" id="image2" accept="image/*">
-        <label style="margin-top:6px;font-size:12px"><input type="checkbox" id="flipFg" style="width:auto"> En la imagen mira a la izquierda</label>
-      </div>
-      <div>
-        <label>Imagen 3 · profundidad del fondo (opcional, 3D)</label>
-        <input type="file" id="image3" accept="image/*">
-      </div>
-      <div>
-        <label>Tamaño patronus: <b id="sizeV">1.00</b></label>
-        <input type="range" id="psize" min="0.4" max="2.5" step="0.05" value="1">
       </div>
       <div>
         <label>Color A</label>
@@ -127,14 +112,7 @@
     </div>
 
     <div style="margin-top:12px">
-      <label>3 · Recorrido del patronus (solo estilo Patronus) — marca en orden dónde pisa, en el suelo de los pasillos</label>
-      <div class="btns" style="margin-top:4px"><button id="editPath">✎ Marcar recorrido</button><button id="clearPath">Borrar puntos</button></div>
-      <textarea id="pathTxt" style="min-height:40px;margin-top:8px" placeholder="Sin puntos: se mueve solo por la pantalla"></textarea>
-      <div class="hint">Pulsa <b>Marcar recorrido</b> y haz clic sobre la imagen. El patronus recorre los puntos en orden durante toda la canción (más despacio a lo lejos). Con la Imagen 3 se mete <i>dentro</i> del laberinto: los setos de delante lo tapan. Copia este texto si quieres guardar el recorrido.</div>
-    </div>
-
-    <div style="margin-top:12px">
-      <label>4 · Colores en el tiempo — una línea por cambio: <code>min:seg | paleta | corte</code> o <code>| fundido 3</code></label>
+      <label>3 · Colores en el tiempo — una línea por cambio: <code>min:seg | paleta | corte</code> o <code>| fundido 3</code></label>
       <div class="btns" style="margin-top:4px"><button id="genCols">🎨 Generar desde la canción</button>
         <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:12.5px;color:var(--txt)"><input type="checkbox" id="liveCol" checked style="width:auto"> Colores vivos (respiran con la música)</label></div>
       <textarea id="colCues" style="min-height:70px;margin-top:8px" placeholder="0:00 | noche | corte&#10;0:32 | neon | corte&#10;1:04 | #ff3b00 #ffd36b | fundido 4"></textarea>
@@ -165,7 +143,7 @@ let imgTex, imgAspect=1, hasImg=false;
 let fgTex, fgAspect=1, hasFg=false;
 const NB=72, specData=new Uint8Array(NB);
 let histTex,histRow=0,histLast=0;
-const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uFg','uFgAspect','uHasFg','uPos','uFacing','uScale','uKickAge','uTrail','uDepth','uTilt','uPD','uFgBot','uHasDep','uDep','uHist','uHistRow','uSeed','uSecT','uEnergy','uPrev'];
+const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uKickAge','uHist','uHistRow','uSeed','uSecT','uEnergy','uPrev','uFlow','uFlowE','uDt','uTS'];
 
 function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
   if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
@@ -180,7 +158,7 @@ void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));vUv=p;gl
 const HEAD=`#version 300 es
 precision highp float;
 uniform vec2 uRes;uniform float uTime,uBass,uMid,uHigh,uLevel,uFlash,uIntensity,uSpecN;
-uniform sampler2D uSpec;uniform vec3 uColA,uColB;
+uniform sampler2D uSpec;uniform vec3 uColA,uColB;uniform float uFlow,uFlowE,uDt;uniform vec2 uTS;
 out vec4 o;
 float hash(vec2 p){return fract(sin(dot(p,vec2(27.17,61.31)))*43758.5453);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
@@ -197,7 +175,7 @@ vec2 coverUV(vec2 c,float imgA,float scrA){vec2 iuv=c;if(imgA>scrA)iuv.x*=scrA/i
 
 const FS_TUNNEL=HEAD+`void main(){
  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float r=length(uv)+1e-3;float ang=atan(uv.y,uv.x);float an=ang/6.28318530718;
- float speed=0.5+uBass*2.6*uIntensity;float depth=0.40/r+uTime*speed;
+ float depth=0.40/r+uFlow*0.55;
  float a2=an+uTime*0.04+0.15*sin(uTime*0.07);
  float pu=smoothstep(0.47,0.5,abs(fract(a2*18.0)-0.5));float pv=smoothstep(0.47,0.5,abs(fract(depth*3.0)-0.5));
  float grid=clamp(pu+pv,0.0,1.0);float plasma=0.5+0.5*sin(a2*12.5663706+depth*3.5+uTime*0.6);
@@ -246,7 +224,7 @@ const FS_SYNTH=HEAD+`void main(){
    col+=(1.0-smoothstep(sr,sr+0.18,d))*0.28*uColB;
  } else {
    float yy=max(-uv.y,0.0001);float persp=1.0/yy;
-   float scroll=uTime*(1.0+uBass*2.2*uIntensity);
+   float scroll=uFlow;
    vec2 G=vec2(uv.x*persp*0.5,persp*0.5-scroll);vec2 fw=fwidth(G)*1.3+0.025;
    vec2 gl2=smoothstep(0.5-fw,vec2(0.5),abs(fract(G)-0.5));
    float grid=max(gl2.x,gl2.y)*clamp(1.0-fw.y*1.5,0.0,1.0);
@@ -260,8 +238,8 @@ const FS_PARTICLES=HEAD+`void main(){
  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float r=length(uv)+1e-3;float a=atan(uv.y,uv.x);
  vec3 col=vec3(0.0);float sp3=1.0+uBass*3.0*uIntensity;
  for(int i=0;i<3;i++){float fi=float(i);float rr=r*(1.0+fi*0.5);
-   float flow=fract(rr*5.0-uTime*sp3+fi*0.33);
-   float h=hash(vec2(floor(fract(a/6.2831853+0.5)*24.0),floor(rr*5.0-uTime*sp3+fi*0.33)));
+   float flow=fract(rr*5.0-uFlow*1.2+fi*0.33);
+   float h=hash(vec2(floor(fract(a/6.2831853+0.5)*24.0),floor(rr*5.0-uFlow*1.2+fi*0.33)));
    float s=step(0.9,h)*smoothstep(0.5,0.0,abs(flow-0.5));
    col+=palette(0.55+0.2*fi)*s;}
  col+=palette(0.95)*exp(-r*3.5)*(0.3+uLevel);
@@ -291,117 +269,6 @@ void main(){
  float vig=1.0-0.5*pow(length(uv-0.5)*1.3,2.2);
  col*=vig;
  col+=(hash(gl_FragCoord.xy+uTime)-0.5)*0.02;
- o=vec4(clamp(col,0.0,1.0),1.0);}`;
-
-const FS_PATRONUS=HEAD+`uniform sampler2D uImg;uniform sampler2D uFg;uniform float uImgAspect,uHasImg,uFgAspect,uHasFg;
-uniform vec2 uPos;uniform float uFacing,uScale,uKickAge,uDepth,uTilt,uPD,uFgBot,uHasDep;uniform vec2 uTrail[12];uniform sampler2D uDep;
-float fgS(vec2 p){vec2 q=vec2(p.x/uFgAspect,p.y)+0.5;
- if(q.x<0.0||q.x>1.0||q.y<0.0||q.y>1.0)return 0.0;
- vec3 s=texture(uFg,q).rgb;float v=max(s.r,max(s.g,s.b));
- float e=smoothstep(0.0,0.10,q.x)*smoothstep(1.0,0.90,q.x)*smoothstep(0.0,0.10,q.y)*smoothstep(1.0,0.90,q.y);
- return smoothstep(0.08,0.40,v)*v*e;}
-float sprite(vec2 p){if(uHasFg>0.5)return fgS(p);vec2 b=p*vec2(1.0,1.6);return exp(-dot(b,b)*30.0);}
-void main(){
- vec2 uv=gl_FragCoord.xy/uRes;float scrA=uRes.x/uRes.y;
- vec2 c=uv-0.5;vec2 ca=c*vec2(scrA,1.0);float I=uIntensity;float t=uTime;
- float far=1.0-uDepth;
- /* camara: dolly lento + golpe de zoom en graves/kicks */
- float zoom=0.86+0.035*sin(t*0.031+0.4)-0.035*uBass*I-0.025*uFlash*I;
- vec2 cam=vec2(0.045*sin(t*0.023+1.0),0.028*sin(t*0.019+2.0));
- /* parallax 3D con el mapa de profundidad: lo cercano se desplaza mas que lo lejano */
- vec2 shift=vec2(0.020*sin(t*0.043+0.7),0.008*sin(t*0.029+1.3))*(1.0+0.6*uFlash*I)*uHasDep;
- vec2 bc0=c*zoom+cam;float sd=0.5;
- if(uHasDep>0.5){sd=texture(uDep,coverUV(bc0,uImgAspect,scrA)).r;sd=texture(uDep,coverUV(bc0+shift*(sd-0.5),uImgAspect,scrA)).r;}
- vec2 bc=bc0+shift*(sd-0.5);
- vec3 raw;
- if(uHasImg>0.5){raw=texture(uImg,coverUV(bc,uImgAspect,scrA)).rgb;}
- else{float h=fbm(bc*vec2(scrA,1.0)*6.0);float lane=smoothstep(0.45,0.55,abs(fract(bc.x*5.0)-0.5)+0.3*h);
-  raw=mix(vec3(0.02,0.07,0.04),vec3(0.05,0.16,0.07),h)*(0.6+0.6*lane);}
- float lum=dot(raw,vec3(0.299,0.587,0.114));
- vec3 night=uColA;
- vec3 bg=raw*vec3(0.88,1.0,0.95);
- bg=mix(night*0.45,bg,smoothstep(0.0,0.22,lum));
- bg*=0.95+0.30*uLevel;
- float pulse=0.55+0.35*uLevel+1.1*uFlash*I;
- /* luz del patronus sobre el laberinto */
- /* el patronus vive en coordenadas de la imagen: sigue a la camara y al parallax */
- bool useOcc=uHasDep>0.5&&uPD>=0.0;float pd=useOcc?uPD:0.5;
- vec2 feetA=((uPos-cam-shift*(pd-0.5))/zoom)*vec2(scrA,1.0);
- float scl=uScale/zoom;
- vec2 cen=feetA+vec2(0.0,(0.5-uFgBot)*scl);
- /* oclusion: los setos mas cercanos que el patronus lo tapan */
- float occ=useOcc?1.0-smoothstep(pd+0.015,pd+0.06,sd):1.0;
- float prox=useOcc?exp(-pow((sd-pd)*5.0,2.0)):1.0;
- vec2 d0=ca-cen;float dist=length(d0);float sr=scl*0.9;
- float spill=exp(-dist*dist/(sr*sr))*pulse*(0.3+0.7*prox);
- bg+=raw*uColB*spill*1.6+uColB*spill*0.04;
- /* charco de luz en el suelo, bajo las patas: lo ancla al suelo */
- vec2 fp=ca-feetA;
- float pool=exp(-(fp.x*fp.x)/(scl*scl*0.30)-(fp.y*fp.y)/(scl*scl*0.012))*pulse*prox;
- bg+=raw*uColB*pool*2.2+uColB*pool*0.10;
- /* niebla en dos capas con parallax */
- vec2 mp=ca+cam*vec2(scrA,1.0);
- float m1=fbm(mp*1.6+vec2(t*0.018,t*0.004));
- float m2=fbm(mp*3.8+vec2(-t*0.034,t*0.011)+m1);
- float mist=smoothstep(0.38,0.95,m1*0.55+m2*0.45);
- mist*=(0.30+0.45*(1.0-uv.y))*(0.75+0.7*uMid*I);
- if(uHasDep>0.5)mist*=mix(1.5,0.45,sd);
- float ring=exp(-pow((dist-uKickAge*0.85)*12.0,2.0))*exp(-uKickAge*2.6)*I;
- vec3 mistCol=night*0.55+uColB*(spill*0.9+ring*1.4);
- bg=mix(bg,mistCol,mist*0.55)+uColB*ring*0.10;
- /* luciernagas */
- vec2 g=ca*9.0+vec2(t*0.05,-t*0.03);vec2 gi=floor(g);vec2 gf=fract(g)-0.5;
- vec2 jp=vec2(hash(gi),hash(gi+7.3))-0.5;jp+=0.25*vec2(sin(t*0.7+hash(gi)*6.0),cos(t*0.6+hash(gi+3.1)*6.0));
- vec2 fd=gf-jp*0.7;float fl=exp(-dot(fd,fd)*900.0)*step(0.78,hash(gi+1.9));
- float tw=0.5+0.5*sin(t*(2.0+3.0*hash(gi+5.0))+hash(gi)*20.0);
- bg+=vec3(0.75,1.0,0.85)*fl*tw*(0.35+1.4*uHigh*I)*0.6;
- /* patronus: espiritu de luz, no pegatina (solo se calcula cerca de el) */
- float body=0.0,rim=0.0,smoke=0.0,aura=0.0;
- if(dist<scl*0.95){
- vec2 p=d0/scl;
- float cs=cos(uTilt),sn=sin(uTilt);p=mat2(cs,sn,-sn,cs)*p;
- p.x/=uFacing;
- p+=(vec2(noise(p*6.0+t*0.9),noise(p*6.0-t*0.8+3.0))-0.5)*(0.018+0.04*uHigh*I);
- float core=sprite(p);
- /* contorno brillante (los patronus son mas luz en el borde que en el centro) */
- float e1=0.010;
- float sx=sprite(p+vec2(e1,0.0))-sprite(p-vec2(e1,0.0));
- float sy=sprite(p+vec2(0.0,e1))-sprite(p-vec2(0.0,e1));
- rim=clamp(length(vec2(sx,sy))*2.2,0.0,1.0);
- /* cuerpo translucido que fluye por dentro */
- float flow=fbm(p*5.0+vec2(0.0,-t*0.7));
- body=core*(0.30+0.55*flow);
- /* humo de luz que se desprende hacia arriba */
- for(int k=1;k<=4;k++){float fk=float(k);
-  vec2 sp=p-vec2((noise(p*3.0+vec2(fk,t*0.5))-0.5)*0.08*fk,0.035*fk);
-  smoke+=sprite(sp)*(1.0-fk/5.0)*smoothstep(0.3,0.75,noise(p*5.0+vec2(fk*1.3,-t*1.4)));}
- smoke*=0.26;
- for(int i=0;i<8;i++){float a=float(i)*0.785398+t*0.3;vec2 od=vec2(cos(a),sin(a));
-  float rr=(i%2==0)?(0.02+0.03*uFlash*I):(0.055+0.05*uBass*I);
-  aura+=sprite(p+od*rr)*((i%2==0)?1.0:0.6);}
- aura/=6.4;
- }
- float flick=0.92+0.08*noise(vec2(t*7.0,1.0));
- float breath=(0.85+0.15*sin(t*1.7)+0.35*uLevel+0.9*uFlash*I)*flick;
- float halo=exp(-dist*dist/(scl*scl*0.18))*0.20*breath*mix(0.45,1.0,occ);
- float light=(body+rim*1.25+aura*0.75+smoke)*breath*occ;
- vec3 glow=mix(uColB,vec3(1.0),clamp(rim+body,0.0,1.0)*0.6)*light+uColB*halo;
- glow*=mix(1.0,0.6,far);
- /* estela de chispas */
- float trail=0.0;
- for(int i=0;i<12;i++){float fi=float(i);float fade=1.0-fi/12.0;
-  vec2 tp=((uTrail[i]-cam-shift*(pd-0.5))/zoom)*vec2(scrA,1.0)+vec2(0.0,(0.5-uFgBot)*scl*0.7)+vec2(sin(fi*2.3+t*1.3),cos(fi*1.7+t*1.1))*0.010*fi+vec2(0.0,0.004*fi);
-  vec2 dd=ca-tp;float r2=dot(dd,dd);float tk=0.55+0.45*sin(t*9.0+fi*1.9);
-  trail+=exp(-r2*14000.0/(1.0+fi*0.5))*fade*tk*(0.7+1.2*uHigh*I);
-  trail+=exp(-r2*220.0/scl)*fade*0.025;}
- trail*=occ;
- glow+=mix(uColB,vec3(1.0),0.5)*trail;
- vec3 col=bg+glow;
- /* cuando esta lejos, la niebla pasa por delante */
- col=mix(col,mistCol,mist*0.35*far);
- col=1.0-exp(-col*1.35);
- col*=1.0-0.55*pow(length(uv-0.5)*1.3,2.2);
- col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
 const FS_NEBULA=HEAD+`uniform float uKickAge;
@@ -653,7 +520,7 @@ void main(){
  vec2 c2=0.35*vec2(sin(t*0.09+2.0+sd*1.3),cos(t*0.15+1.0));
  vec2 c3=0.25*vec2(cos(t*0.07+sd),sin(t*0.05+3.0));
  float freq=26.0+10.0*sin(sd)+uBass*16.0*I;
- float f1=sin(length(uv-c1)*freq-t*3.0*(0.7+uEnergy));
+ float f1=sin(length(uv-c1)*freq-uFlowE*3.0);
  float f2=sin(length(uv-c2)*freq*1.07+t*2.3);
  float arms=6.0+2.0*floor(mod(uSeed,4.0));
  float sp=sin(a*arms+log(r+1e-3)*(10.0+uMid*10.0*I)-t*2.0);
@@ -664,7 +531,7 @@ void main(){
  vec3 hi=palette(0.6+0.4*sin(r*6.0-t+sd));
  vec3 col=mix(uColA*0.04,hi,bw);
  float sh=0.004*uHigh*I;
- col.r=mix(col.r,col.r*(1.0+smoothstep(-aa,aa,sin(length(uv+vec2(sh,0.0)-c1)*freq-t*3.0*(0.7+uEnergy))*f2)),0.3);
+ col.r=mix(col.r,col.r*(1.0+smoothstep(-aa,aa,sin(length(uv+vec2(sh,0.0)-c1)*freq-uFlowE*3.0)*f2)),0.3);
  col+=palette(0.95)*exp(-pow((r-uKickAge*0.9)*9.0,2.0))*exp(-uKickAge*2.8)*0.4*I;
  col*=1.0-0.35*pow(r*0.9,2.2);
  col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
@@ -734,15 +601,15 @@ void main(){
 const FS_MIRROR=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSeed,uSecT,uEnergy;
 void main(){
  float A=uRes.x/uRes.y;vec2 uv=gl_FragCoord.xy/uRes;vec2 c=(uv-0.5)*vec2(A,1.0);float t=uTime,I=uIntensity;
- float zoom=0.985-0.022*uBass*I-0.012*uEnergy;
+ float zoom=pow(0.985-0.022*uBass*I-0.012*uEnergy,uDt*60.0);
  float dir=mod(uSeed,2.0)<1.0?1.0:-1.0;
  float ang=dir*(0.004+0.008*sin(t*0.07+uSeed))*(1.0+uMid*2.5*I);
- vec2 q=(c*rot(ang))*zoom;
+ ang*=uDt*60.0;vec2 q=(c*rot(ang))*zoom;
  float seg=3.0+mod(uSeed,4.0);float s=6.2831853/seg;float qa=atan(q.y,q.x);qa=abs(mod(qa,s)-0.5*s);
  q=mix(q,vec2(cos(qa),sin(qa))*length(q),0.75+0.2*sin(t*0.05+uSeed));
- q+=0.0025*vec2(sin(c.y*11.0+t*1.3),cos(c.x*9.0-t))*(1.0+uHigh*4.0*I);
- vec3 prev=texture(uPrev,q/vec2(A,1.0)+0.5).rgb;
- prev=prev*(0.962-0.02*(1.0-uLevel))-0.002;
+ q+=0.0025*vec2(sin(c.y*11.0+t*1.3),cos(c.x*9.0-t))*(1.0+uHigh*4.0*I)*uDt*60.0;
+ vec3 prev=texture(uPrev,(q/vec2(A,1.0)+0.5)*uTS).rgb;
+ prev=prev*pow(0.962-0.02*(1.0-uLevel),uDt*60.0)-0.002*uDt*60.0;
  float r=length(c);float a=atan(c.y,c.x);
  float sp=texture(uSpec,vec2(0.05+abs(a/6.2831853)*1.9,0.5)).r;
  float R0=0.05+0.05*uBass*I;
@@ -764,8 +631,8 @@ vec2 flowv(vec2 p,float t){float e=0.02;vec2 o2=vec2(0.0,t*0.05)+uSeed*3.1;
  return vec2(ny-n1,-(nx-n1))/e;}
 void main(){
  float A=uRes.x/uRes.y;vec2 uv=gl_FragCoord.xy/uRes;vec2 c=(uv-0.5)*vec2(A,1.0);float t=uTime,I=uIntensity;
- vec2 v=flowv(c,t)*(0.0015+0.005*uBass*I+0.002*uEnergy);
- vec3 col=texture(uPrev,(c-v)/vec2(A,1.0)+0.5).rgb*(0.993-0.012*uFlash*I)-0.0012;
+ vec2 v=flowv(c,t)*(0.0015+0.005*uBass*I+0.002*uEnergy)*uDt*60.0;
+ vec3 col=texture(uPrev,((c-v)/vec2(A,1.0)+0.5)*uTS).rgb*pow(0.993-0.012*uFlash*I,uDt*60.0)-0.0012*uDt*60.0;
  col=max(col,vec3(0.0));
  for(int i=0;i<6;i++){float fi=float(i);
   vec2 bp=vec2(0.75*sin(t*(0.21+fi*0.05)+fi*2.1+uSeed),0.4*sin(t*(0.17+fi*0.043)+fi*1.3+uSeed*0.5));
@@ -773,7 +640,7 @@ void main(){
   float sz=0.02+0.055*band*I;
   float m=smoothstep(sz,sz*0.2,length(c-bp));
   vec3 bc=palette(0.25+0.75*fract(0.17*fi+t*0.015+uSeed*0.21));
-  col=mix(col,bc,m*0.55);}
+  col=mix(col,bc,1.0-pow(1.0-m*0.55,uDt*60.0));}
  float kid=floor((t-uKickAge)*10.0);
  vec2 kp=(vec2(hash(vec2(kid,1.0)),hash(vec2(kid,2.0)))-0.5)*vec2(1.5,0.8);
  float kd=length(c-kp);
@@ -785,11 +652,11 @@ void main(){
  vec2 uv=gl_FragCoord.xy/uRes;float t=uTime,I=uIntensity;float A=uRes.x/uRes.y;
  vec2 bs=vec2(48.0,27.0)/(1.0+floor(mod(uSeed,3.0)));
  vec2 bid=floor(uv*bs);float h=hash(bid+floor(t*2.0));
- vec2 mv=(vec2(hash(bid+3.1+floor(t*0.5)),hash(bid+7.7+floor(t*0.5)))-0.5)*0.005*(0.3+uMid*3.0*I);
+ vec2 mv=(vec2(hash(bid+3.1+floor(t*0.5)),hash(bid+7.7+floor(t*0.5)))-0.5)*0.005*(0.3+uMid*3.0*I)*uDt*60.0;
  mv.x+=step(0.92,h)*0.02*uHigh*I*sign(h-0.96);
  vec2 pu=uv-mv;float sh=0.0015+0.01*uFlash*I;
- vec3 prev=vec3(texture(uPrev,pu+vec2(sh,0.0)).r,texture(uPrev,pu).g,texture(uPrev,pu-vec2(sh,0.0)).b);
- prev=max(prev*0.986-0.001,vec3(0.0));
+ vec3 prev=vec3(texture(uPrev,(pu+vec2(sh,0.0))*uTS).r,texture(uPrev,pu*uTS).g,texture(uPrev,(pu-vec2(sh,0.0))*uTS).b);
+ prev=max(prev*pow(0.986,uDt*60.0)-0.001*uDt*60.0,vec3(0.0));
  vec2 c=(uv-0.5)*vec2(A,1.0);
  float sp=texture(uSpec,vec2(abs(uv.x-0.5)*1.8+0.04,0.5)).r;
  float bars=step(abs(uv.y-0.5)*2.0,sp*sp*0.9*I)*step(0.35,fract(uv.x*60.0));
@@ -806,8 +673,8 @@ void main(){
  o=vec4(min(col,vec3(1.2)),1.0);}`;
 
 const FS_BLIT=`#version 300 es
-precision highp float;uniform sampler2D uTex;in vec2 vUv;out vec4 o;
-void main(){o=vec4(clamp(texture(uTex,vUv).rgb,0.0,1.0),1.0);}`;
+precision highp float;uniform sampler2D uTex;uniform vec2 uS;in vec2 vUv;out vec4 o;
+void main(){o=vec4(clamp(texture(uTex,vUv*uS).rgb,0.0,1.0),1.0);}`;
 const FS_TEXT=`#version 300 es
 precision highp float;uniform sampler2D uTex;uniform float uAlpha;in vec2 vUv;out vec4 o;
 void main(){vec4 t=texture(uTex,vUv);o=vec4(t.rgb,t.a*uAlpha);}`;
@@ -816,7 +683,10 @@ function makeScene(fs){const prog=program(VS,fs);const loc={};for(const n of UNA
 
 /* ===== Retroalimentacion: dos buffers que se alternan (cada imagen se pinta sobre la anterior) ===== */
 const FEEDBACK={mirror:1,paint:1,glitch:1};
-let fb=[],fbTex=[],fbIdx=0,blitProg,ubTex;
+let fb=[],fbTex=[],fbIdx=0,blitProg,ubTex,ubS,sceneFB,sceneTex;
+const SCALES=[0.5,0.6,0.7,0.85,1.0];let qi=4,emaDt=1/60,qTimer=0,qGood=0,lastNow=performance.now();
+const HEAVY={blob:1,flight:1,fractal:1,kali:1,gyroid:1,aurora:1,nebula:1,kaleido:1,ink:1};
+function setQ(i){qi=Math.max(0,Math.min(SCALES.length-1,i));const q=S('qual');if(q)q.textContent='· calidad '+Math.round(SCALES[qi]*100)+'%';}
 function initFB(){const ext=gl.getExtension('EXT_color_buffer_float');
   for(let i=0;i<2;i++){const tx=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tx);
     if(ext)gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,1920,1080,0,gl.RGBA,gl.HALF_FLOAT,null);
@@ -826,12 +696,17 @@ function initFB(){const ext=gl.getExtension('EXT_color_buffer_float');
     const f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tx,0);
     fb.push(f);fbTex.push(tx);}
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
-  blitProg=program(VS,FS_BLIT);ubTex=gl.getUniformLocation(blitProg,'uTex');clearFB();}
+  blitProg=program(VS,FS_BLIT);ubTex=gl.getUniformLocation(blitProg,'uTex');ubS=gl.getUniformLocation(blitProg,'uS');
+  sceneTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,sceneTex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,1920,1080,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  sceneFB=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFB);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,sceneTex,0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);clearFB();}
 function clearFB(){if(!fb.length)return;for(const f of fb){gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);}gl.bindFramebuffer(gl.FRAMEBUFFER,null);}
 function initGL(){
   const c=S('gl');gl=c.getContext('webgl2',{preserveDrawingBuffer:true,alpha:false});
   if(!gl)throw new Error('Tu navegador no soporta WebGL2.');
-  const defs={tunnel:FS_TUNNEL,kaleido:FS_KALEIDO,synth:FS_SYNTH,particles:FS_PARTICLES,image:FS_IMAGE,patronus:FS_PATRONUS,nebula:FS_NEBULA,ridges:FS_RIDGES,blob:FS_BLOB,flight:FS_FLIGHT,fractal:FS_FRACTAL,ink:FS_INK,aurora:FS_AURORA,opart:FS_OPART,kali:FS_KALI,gyroid:FS_GYROID,mirror:FS_MIRROR,paint:FS_PAINT,glitch:FS_GLITCH};
+  const defs={tunnel:FS_TUNNEL,kaleido:FS_KALEIDO,synth:FS_SYNTH,particles:FS_PARTICLES,image:FS_IMAGE,nebula:FS_NEBULA,ridges:FS_RIDGES,blob:FS_BLOB,flight:FS_FLIGHT,fractal:FS_FRACTAL,ink:FS_INK,aurora:FS_AURORA,opart:FS_OPART,kali:FS_KALI,gyroid:FS_GYROID,mirror:FS_MIRROR,paint:FS_PAINT,glitch:FS_GLITCH};
   const failed=[];
   for(const k in defs){try{scenes[k]=makeScene(defs[k]);}catch(e){failed.push(k+': '+e.message);
     const opt=[...S('style').options].find(o=>o.value===k);if(opt)opt.remove();}}
@@ -876,48 +751,7 @@ function drawTextTexture(cue){const ctx=textCtx,W=1920,H=1080;ctx.clearRect(0,0,
 function cueAlpha(c,t){const a=c.t0,b=c.t0+c.fin,cc=b+c.hold,d=cc+c.fout;if(t<a||t>d)return 0;if(t<b)return (t-a)/c.fin;if(t<cc)return 1;return 1-(t-cc)/c.fout;}
 
 let actx,analyser,freqBuf,srcNode,buffer=null,msDest,startTime=0,playing=false,bassAvg=0,flash=0,kickT=-99,facingS=1;
-const trailArr=new Float32Array(24);
-let depTex=null,hasDep=false,depCPU=null,depW=0,depH=0,fgBot=0.38,waypoints=[],wpCache=null,editPath=false,curT=0;
-function sizeK(){return parseFloat(S('psize').value);}
-function camJS(t){return {zoom:0.86+0.035*Math.sin(t*0.031+0.4),x:0.045*Math.sin(t*0.023+1.0),y:0.028*Math.sin(t*0.019+2.0)};}
-function coverJS(cx,cy){const scrA=16/9,A=imgAspect;let x=cx,y=cy;if(A>scrA)x*=scrA/A;else y*=A/scrA;return [x+0.5,y+0.5];}
-function depthAt(bx,by){if(!depCPU)return 0.45;const [u,v]=coverJS(bx,by);let s=0,n=0;
-  for(let j=-1;j<=1;j++)for(let i=-1;i<=1;i++){const px=Math.min(depW-1,Math.max(0,Math.round(u*(depW-1))+i)),py=Math.min(depH-1,Math.max(0,Math.round((1-v)*(depH-1))+j));s+=depCPU[(py*depW+px)*4];n++;}
-  return s/n/255;}
-function buildPath(){const W=waypoints;if(W.length<2){wpCache=null;return;}const seg=[];let tot=0;
-  for(let i=0;i<W.length-1;i++){const a=W[i],b=W[i+1];const d=Math.hypot((b[0]-a[0])*16/9,b[1]-a[1]);
-    const dm=hasDep?Math.max(0.12,(depthAt(a[0],a[1])+depthAt(b[0],b[1]))/2):1;const w=Math.max(1e-4,d/dm);seg.push(w);tot+=w;}
-  wpCache={seg,tot};}
-function cr(a,b,c,d,u){const u2=u*u,u3=u2*u;return [0,1].map(k=>0.5*(2*b[k]+(-a[k]+c[k])*u+(2*a[k]-5*b[k]+4*c[k]-d[k])*u2+(-a[k]+3*b[k]-3*c[k]+d[k])*u3));}
-function wpAt(t){const W=waypoints,n=W.length;const dur=buffer?buffer.duration:60;let f=t/dur;
-  f=playing?Math.min(1,Math.max(0,f)):((f%1)+1)%1;let tg=f*wpCache.tot,i=0;
-  while(i<n-2&&tg>wpCache.seg[i]){tg-=wpCache.seg[i];i++;}
-  const u=Math.min(1,tg/wpCache.seg[i]);const g=k=>W[Math.max(0,Math.min(n-1,k))];return cr(g(i-1),g(i),g(i+1),g(i+2),u);}
-/* posicion de las PATAS en coordenadas de la imagen + profundidad + tamano */
-function pathAt(t){
-  if(wpCache){const P=wpAt(t);const d=hasDep?depthAt(P[0],P[1]):0.45;const z=Math.min(1,Math.max(0,(d-0.15)/0.5));
-    const sz=(hasDep?0.6*Math.pow(Math.max(d,0.05),1.5):0.30)*sizeK();
-    return {bx:P[0],by:P[1]+0.03*sz*Math.abs(Math.sin(t*3.2)),d,z,s:sz,occ:hasDep};}
-  const q=patPath(t);const sz=(0.22+0.33*q.z)*sizeK();
-  return {bx:q.x/(16/9)*0.86,by:(q.y-(0.5-fgBot)*sz)*0.86,d:-1,z:q.z,s:sz*0.86,occ:false};}
-function syncPathTxt(){S('pathTxt').value=waypoints.map(w=>w[0].toFixed(3)+','+w[1].toFixed(3)).join('; ');try{localStorage.setItem('vt_path',S('pathTxt').value);}catch(e){}}
-function parsePathTxt(){waypoints=S('pathTxt').value.split(';').map(x=>x.split(',').map(Number)).filter(p=>p.length===2&&p.every(isFinite));buildPath();try{localStorage.setItem('vt_path',S('pathTxt').value);}catch(e){}}
-function drawOverlay(){const ov=S('ov'),c=ov.getContext('2d');c.clearRect(0,0,1920,1080);
-  if(playing||S('style').value!=='patronus'||!(editPath||waypoints.length))return;const k=camJS(curT);
-  const sp=w=>[((w[0]-k.x)/k.zoom+0.5)*1920,(0.5-(w[1]-k.y)/k.zoom)*1080];
-  c.lineWidth=4;c.strokeStyle='rgba(31,209,178,.7)';c.beginPath();waypoints.forEach((w,i)=>{const [x,y]=sp(w);i?c.lineTo(x,y):c.moveTo(x,y);});c.stroke();
-  c.font='700 30px Poppins,sans-serif';c.textAlign='center';c.textBaseline='middle';
-  waypoints.forEach((w,i)=>{const [x,y]=sp(w);c.fillStyle='#1fd1b2';c.beginPath();c.arc(x,y,20,0,7);c.fill();c.fillStyle='#04121d';c.fillText(i+1,x,y+1);});
-  if(editPath){c.fillStyle='rgba(0,0,0,.55)';c.fillRect(20,20,820,60);c.fillStyle='#fff';c.textAlign='left';c.fillText('Clic en el suelo de los pasillos, en orden',40,51);}}
 function songT(){return actx.currentTime-startTime;}
-/* recorrido del patronus: suma de senos no conmensurables -> no se repite en toda la cancion */
-function patPath(t){
-  /* camina por el suelo: lejos = mas arriba (horizonte) y mas pequeno; cerca = abajo y grande */
-  const z=Math.min(1,Math.max(0,0.5+0.35*Math.sin(0.07*t+0.8)+0.15*Math.sin(0.17*t+2.4)));
-  const x=(0.42*Math.sin(0.11*t+0.3)+0.16*Math.sin(0.27*t+1.1)+0.05*Math.sin(0.61*t+2.2))*(0.6+0.4*z);
-  const step=Math.abs(Math.sin(t*3.2));
-  const y=-0.24+(1-z)*0.30+0.010*step*(0.5+0.5*z);
-  return {x,y,z};}
 /* ===== Motor de color + analisis de la cancion ===== */
 const PRESETS={noche:['#0b1d3a','#dff1ff'],fuego:['#ff3b00','#ffd36b'],neon:['#ff00c8','#00f0ff'],acido:['#39ff14','#f7ff00'],hielo:['#0077ff','#e8fbff'],sangre:['#5a0000','#ff3030'],oro:['#6b3f00','#ffd700'],vapor:['#ff71ce','#01cdfe'],toxico:['#00ff9f','#b967ff'],ocaso:['#ff6a00','#ee0979'],oceano:['#003973','#00e5ff'],violeta:['#3a0ca3','#f72585'],mono:['#1a1a1a','#ffffff'],selva:['#0b3d0b','#9dff57']};
 let songMap=null,colorCues=[],centSm=0.35;
@@ -965,37 +799,54 @@ async function loadAudio(file){if(!actx)actx=new (window.AudioContext||window.we
   try{songMap=analyzeSong(buffer);}catch(e){songMap=null;}
   setStatus('Canción cargada ('+fmtT(buffer.duration)+'). '+(songMap?songMap.sections.length+' secciones detectadas ('+songMap.sections.filter(x=>x.drop).length+' drops). ':'')+'Previsualiza o graba.');}
 function buildGraph(){srcNode=actx.createBufferSource();srcNode.buffer=buffer;
-  analyser=actx.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=0.6;
+  analyser=actx.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=0.3;
   freqBuf=new Uint8Array(analyser.frequencyBinCount);msDest=actx.createMediaStreamDestination();
   srcNode.connect(analyser);analyser.connect(actx.destination);analyser.connect(msDest);}
-function startAudio(){clearFB();buildGraph();srcNode.start(0);startTime=actx.currentTime;playing=true;kickT=-99;facingS=(pathAt(0.1).bx-pathAt(-0.1).bx)>=0?1:-1;
+function startAudio(){clearFB();buildGraph();srcNode.start(0);startTime=actx.currentTime;playing=true;kickT=-99;flowB=0;flowE=0;
   const node=srcNode;node.onended=()=>{if(node!==srcNode)return;playing=false;
     if(recorder&&recorder.state==='recording')recorder.stop();else{resetButtons();setStatus('Fin de la canción. Puedes previsualizar o grabar otra vez.');}};}
 function stopAudio(){try{srcNode&&srcNode.stop();}catch(e){}playing=false;}
 
 let lastBass=0,lastMid=0,lastHigh=0,lastLevel=0;
-function readAudio(){
-  if(!playing){lastBass=lastMid=lastHigh=lastLevel=0;flash*=0.85;for(let i=0;i<NB;i++)specData[i]*=0.85;return;}
+let kFast=0,kSlow=0,flowB=0,flowE=0;const specSm=new Float32Array(NB);
+/* seguidor de envolvente: sube con 'at' segundos y baja con 'rl' segundos (independiente de los fps) */
+function fol(c,x,dt,at,rl){return c+(x-c)*(1-Math.exp(-dt/(x>c?at:rl)));}
+function readAudio(dt){
+  const I=parseFloat(S('intensity').value);
+  if(!playing){lastBass=fol(lastBass,0,dt,.05,.35);lastMid=fol(lastMid,0,dt,.05,.35);lastHigh=fol(lastHigh,0,dt,.05,.35);lastLevel=fol(lastLevel,0,dt,.05,.45);
+    for(let i=0;i<NB;i++){specSm[i]=fol(specSm[i],0,dt,.05,.3);specData[i]=specSm[i];}flash=fol(flash,0,dt,.02,.2);flowB+=dt;flowE+=dt;return;}
   analyser.getByteFrequencyData(freqBuf);const n=freqBuf.length;
   const avg=(lo,hi)=>{let s=0,c=0;for(let i=lo;i<hi&&i<n;i++){s+=freqBuf[i];c++;}return c?s/c/255:0;};
-  lastBass=avg(1,8);lastMid=avg(8,60);lastHigh=avg(60,260);lastLevel=avg(1,260);
-  {let sw=0,ss=0;for(let i=1;i<300&&i<n;i++){sw+=freqBuf[i]*i;ss+=freqBuf[i];}const cn=ss>0?sw/ss/300:0.3;centSm=centSm*0.97+cn*0.03;}
-  bassAvg=bassAvg*0.9+lastBass*0.1;if(lastBass>bassAvg*1.35&&lastBass>0.28){if(flash<0.6)kickT=songT();flash=1.0;}flash*=0.88;
-  for(let i=0;i<NB;i++){const f=Math.pow(i/NB,1.7);const idx=Math.min(n-1,2+Math.floor(f*(n*0.5)));specData[i]=freqBuf[idx];}
+  const rb=avg(1,8),rm=avg(8,60),rh=avg(60,260),rl=avg(1,260);
+  lastBass=fol(lastBass,rb,dt,0.06,0.32);lastMid=fol(lastMid,rm,dt,0.08,0.40);lastHigh=fol(lastHigh,rh,dt,0.05,0.30);lastLevel=fol(lastLevel,rl,dt,0.12,0.60);
+  {let sw=0,ss=0;for(let i=1;i<300&&i<n;i++){sw+=freqBuf[i]*i;ss+=freqBuf[i];}const cn=ss>0?sw/ss/300:0.3;centSm=fol(centSm,cn,dt,1.2,1.2);}
+  const st=songT();kFast=fol(kFast,rb,dt,0.008,0.06);kSlow=fol(kSlow,rb,dt,0.45,0.45);
+  if(kFast>kSlow*1.25&&kFast>0.3&&st-kickT>0.16)kickT=st;
+  const age=st-kickT;flash=age<0?0:(age<0.035?age/0.035:Math.exp(-(age-0.035)/0.22));
+  for(let i=0;i<NB;i++){const f=Math.pow(i/NB,1.7);const idx=Math.min(n-1,2+Math.floor(f*(n*0.5)));specSm[i]=fol(specSm[i],freqBuf[idx],dt,0.05,0.25);specData[i]=specSm[i];}
+  flowB+=dt*(1+2.5*lastBass*I);flowE+=dt*(0.7+energyAt(st));
 }
 
 let t0=performance.now();
 function frame(){
-  const t=playing?songT():(performance.now()-t0)/1000;curT=t;
-  readAudio();drawOverlay();
+  const now=performance.now(),dt=Math.min(0.1,Math.max(0.001,(now-lastNow)/1000));lastNow=now;
+  const t=playing?songT():(now-t0)/1000;
+  readAudio(dt);
+  /* calidad automatica: si no llega a ~60 fps baja la resolucion interna; si sobra, la sube */
+  emaDt=emaDt*0.93+dt*0.07;qTimer+=dt;
+  if(qTimer>0.75){qTimer=0;if(emaDt>1/48&&qi>0){setQ(qi-1);qGood=0;}else if(emaDt<1/57){if(++qGood>=4&&qi<SCALES.length-1){setQ(qi+1);qGood=0;}}else qGood=0;}
+  const RW=Math.round(1920*SCALES[qi]),RH=Math.round(1080*SCALES[qi]);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D,specTex);
   gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,NB,1,gl.RED,gl.UNSIGNED_BYTE,specData);
-  const sc=scenes[S('style').value]||scenes.tunnel;const isFB=!!FEEDBACK[S('style').value]&&fb.length===2;
-  if(isFB){gl.bindFramebuffer(gl.FRAMEBUFFER,fb[1-fbIdx]);}
+  const sc=scenes[S('style').value]||scenes.tunnel;const isFB=!!FEEDBACK[S('style').value]&&fb.length===2;const lowRes=!isFB&&qi<SCALES.length-1&&!!sceneFB;
+  if(isFB)gl.bindFramebuffer(gl.FRAMEBUFFER,fb[1-fbIdx]);else if(lowRes)gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFB);
   if(sc){
-    gl.viewport(0,0,1920,1080);gl.useProgram(sc.prog);const L=sc.loc;
-    if(L.uRes)gl.uniform2f(L.uRes,1920,1080);
+    const VW=(isFB||lowRes)?RW:1920,VH=(isFB||lowRes)?RH:1080;
+    gl.viewport(0,0,VW,VH);gl.useProgram(sc.prog);const L=sc.loc;
+    if(L.uRes)gl.uniform2f(L.uRes,VW,VH);
+    if(L.uTS)gl.uniform2f(L.uTS,VW/1920,VH/1080);if(L.uDt)gl.uniform1f(L.uDt,dt);
+    if(L.uFlow)gl.uniform1f(L.uFlow,flowB);if(L.uFlowE)gl.uniform1f(L.uFlowE,flowE);
     if(L.uTime)gl.uniform1f(L.uTime,t);
     if(L.uBass)gl.uniform1f(L.uBass,lastBass);
     if(L.uMid)gl.uniform1f(L.uMid,lastMid);
@@ -1011,32 +862,15 @@ function frame(){
     if(L.uImgAspect)gl.uniform1f(L.uImgAspect,imgAspect);
     if(L.uHasImg)gl.uniform1f(L.uHasImg,hasImg?1.0:0.0);
     if(L.uImg){gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,imgTex);gl.uniform1i(L.uImg,1);}
-    if(L.uFgAspect)gl.uniform1f(L.uFgAspect,fgAspect);
-    if(L.uHasFg)gl.uniform1f(L.uHasFg,hasFg?1.0:0.0);
     if(L.uKickAge)gl.uniform1f(L.uKickAge,playing?Math.max(0,t-kickT):10.0);
     if(L.uHist){if(t-histLast>1/40||t<histLast){histLast=t;histRow=(histRow+1)%64;gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D,histTex);
         gl.texSubImage2D(gl.TEXTURE_2D,0,0,histRow,NB,1,gl.RED,gl.UNSIGNED_BYTE,specData);}
       gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D,histTex);gl.uniform1i(L.uHist,4);gl.uniform1f(L.uHistRow,histRow);}
-    if(L.uPos){const I=parseFloat(S('intensity').value),P=pathAt(t);
-      const dx=pathAt(t+0.1).bx-pathAt(t-0.1).bx;if(Math.abs(dx)>1e-5)facingS+=((dx>=0?1:-1)-facingS)*0.07;
-      const f=Math.sign(facingS||1)*Math.max(Math.abs(facingS),0.12)*(S('flipFg').checked?-1:1);
-      gl.uniform2f(L.uPos,P.bx,P.by);gl.uniform1f(L.uFacing,f);
-      gl.uniform1f(L.uScale,P.s*(1+0.07*lastBass*I+0.05*flash*I));
-      if(L.uDepth)gl.uniform1f(L.uDepth,P.z);
-      if(L.uPD)gl.uniform1f(L.uPD,P.occ?P.d:-1.0);
-      if(L.uFgBot)gl.uniform1f(L.uFgBot,hasFg?fgBot:0.38);
-      if(L.uHasDep)gl.uniform1f(L.uHasDep,hasDep?1.0:0.0);
-      if(L.uDep){gl.activeTexture(gl.TEXTURE3);gl.bindTexture(gl.TEXTURE_2D,depTex||imgTex);gl.uniform1i(L.uDep,3);}
-      if(L.uTilt){const P2=pathAt(t+0.15);const sl=Math.atan2((P2.by-P.by),Math.abs(P2.bx-P.bx)*16/9+1e-4);gl.uniform1f(L.uTilt,Math.max(-0.12,Math.min(0.12,sl*0.5))*Math.sign(f)+0.025*Math.sin(t*6.4));}
-      gl.uniform1f(L.uKickAge,playing?Math.max(0,t-kickT):10.0);
-      for(let i=0;i<12;i++){const q=pathAt(t-0.18*(i+1));trailArr[2*i]=q.bx;trailArr[2*i+1]=q.by;}
-      gl.uniform2fv(L.uTrail,trailArr);}
-    if(L.uFg){gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,fgTex);gl.uniform1i(L.uFg,2);}
     if(L.uSpec){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,specTex);gl.uniform1i(L.uSpec,0);}
     if(L.uPrev){gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,fbTex[fbIdx]);gl.uniform1i(L.uPrev,5);}
     gl.disable(gl.BLEND);gl.drawArrays(gl.TRIANGLES,0,3);
-    if(isFB){gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,1920,1080);gl.useProgram(blitProg);
-      gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,fbTex[1-fbIdx]);gl.uniform1i(ubTex,5);gl.drawArrays(gl.TRIANGLES,0,3);fbIdx=1-fbIdx;}
+    if(isFB||lowRes){gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,1920,1080);gl.useProgram(blitProg);
+      gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,isFB?fbTex[1-fbIdx]:sceneTex);gl.uniform1i(ubTex,5);gl.uniform2f(ubS,VW/1920,VH/1080);gl.drawArrays(gl.TRIANGLES,0,3);if(isFB)fbIdx=1-fbIdx;}
   }
   if(playing){const et=actx.currentTime-startTime;let act=-1,alpha=0;
     for(let i=0;i<cues.length;i++){const a=cueAlpha(cues[i],et);if(a>0){act=i;alpha=a;break;}}
@@ -1077,39 +911,11 @@ S('audio').onchange=async e=>{const f=e.target.files[0];if(!f)return;
 S('image').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Image();
   img.onload=()=>{imgAspect=img.width/img.height;gl.bindTexture(gl.TEXTURE_2D,imgTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
-    hasImg=true;if(S('style').value!=='patronus')S('style').value='image';setStatus('Imagen cargada. Previsualiza o graba en estilo “Imagen”.');URL.revokeObjectURL(img.src);};
+    hasImg=true;S('style').value='image';clearFB();setStatus('Imagen cargada. Previsualiza o graba en estilo “Imagen”.');URL.revokeObjectURL(img.src);};
   img.onerror=()=>showErr('No se pudo cargar la imagen.');img.src=URL.createObjectURL(f);};
-S('image2').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Image();
-  img.onload=()=>{fgAspect=img.width/img.height;gl.bindTexture(gl.TEXTURE_2D,fgTex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
-    hasFg=true;fgBot=detectBottom(img);if(S('style').value!=='patronus'){S('style').value='patronus';applyPreset();}setStatus('Patronus cargado. Carga también el fondo (Imagen 1) y dale a Previsualizar.');URL.revokeObjectURL(img.src);};
-  img.onerror=()=>showErr('No se pudo cargar la imagen 2.');img.src=URL.createObjectURL(f);};
-/* donde estan las patas en la imagen del patronus (fila brillante mas baja) */
-function detectBottom(img){try{const w=160,h=Math.max(1,Math.round(160/(img.width/img.height)));const cv=document.createElement('canvas');cv.width=w;cv.height=h;
-  const cx=cv.getContext('2d');cx.drawImage(img,0,0,w,h);const d=cx.getImageData(0,0,w,h).data;
-  for(let y=h-1;y>=0;y--){let hit=0;for(let x=0;x<w;x++){const i=(y*w+x)*4;if(Math.max(d[i],d[i+1],d[i+2])>80)hit++;}if(hit>=2)return Math.min(0.48,Math.max(0.0,1-(y+1)/h));}
-}catch(e){}return 0.14;}
-S('image3').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Image();
-  img.onload=()=>{if(!depTex){depTex=gl.createTexture();}gl.bindTexture(gl.TEXTURE_2D,depTex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-    depW=320;depH=Math.max(1,Math.round(320/(img.width/img.height)));const cv=document.createElement('canvas');cv.width=depW;cv.height=depH;
-    const cx=cv.getContext('2d');cx.drawImage(img,0,0,depW,depH);depCPU=cx.getImageData(0,0,depW,depH).data;
-    hasDep=true;buildPath();setStatus(waypoints.length>1?'Profundidad cargada: el patronus ya está dentro del laberinto.':'Profundidad cargada. Ahora pulsa “Marcar recorrido” y haz clic en el suelo de los pasillos.');URL.revokeObjectURL(img.src);};
-  img.onerror=()=>showErr('No se pudo cargar la imagen de profundidad.');img.src=URL.createObjectURL(f);};
 S('genCols').onclick=genColorCues;
-S('psize').oninput=e=>S('sizeV').textContent=parseFloat(e.target.value).toFixed(2);
-S('editPath').onclick=()=>{editPath=!editPath;S('editPath').textContent=editPath?'✔ Terminar':'✎ Marcar recorrido';
-  if(editPath&&S('style').value!=='patronus'){S('style').value='patronus';applyPreset();}};
-S('clearPath').onclick=()=>{waypoints=[];syncPathTxt();buildPath();};
-S('pathTxt').onchange=parsePathTxt;
-S('gl').parentElement.addEventListener('click',e=>{if(!editPath)return;const r=S('gl').getBoundingClientRect();
-  const cx=(e.clientX-r.left)/r.width-0.5,cy=0.5-(e.clientY-r.top)/r.height;const k=camJS(curT);
-  waypoints.push([cx*k.zoom+k.x,cy*k.zoom+k.y]);syncPathTxt();buildPath();});
-try{const sv=localStorage.getItem('vt_path');if(sv){S('pathTxt').value=sv;parsePathTxt();}}catch(e){}
-function applyPreset(){if(S('style').value==='patronus'){S('colA').value='#0b1d3a';S('colB').value='#dff1ff';}}
-S('style').onchange=()=>{applyPreset();clearFB();};
+function applyPreset(){}
+S('style').onchange=()=>{applyPreset();clearFB();setQ(HEAVY[S('style').value]?2:4);qGood=0;};
 /* atajos: 1-9 y 0 cambian de paleta en directo (Mayus = corte brusco). Se apuntan en 'Colores en el tiempo' */
 const KEYPAL=['violeta','noche','fuego','neon','acido','hielo','sangre','oro','vapor','toxico'];
 document.addEventListener('keydown',e=>{const tg=(e.target.tagName||'').toLowerCase();if(tg==='textarea'||tg==='input'||tg==='select')return;
