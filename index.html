@@ -48,7 +48,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.14 · 18 estilos <span id="qual"></span></small></h1>
+  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.15 · 18 estilos <span id="qual"></span></small></h1>
   <p class="sub">Elige estilo, carga una canción, pon las palabras con su tiempo y graba. Render por GPU en tu navegador.</p>
 
   <div class="stage">
@@ -125,6 +125,14 @@
       <textarea id="colCues" style="min-height:70px;margin-top:8px" placeholder="0:00 | noche | corte&#10;0:32 | neon | corte&#10;1:04 | #ff3b00 #ffd36b | fundido 4"></textarea>
       <div class="hint" id="colFb" style="margin-top:6px"></div>
       <div class="hint">Paletas: <code>noche</code> <code>fuego</code> <code>neon</code> <code>acido</code> <code>hielo</code> <code>sangre</code> <code>oro</code> <code>vapor</code> <code>toxico</code> <code>ocaso</code> <code>oceano</code> <code>violeta</code> <code>mono</code> <code>selva</code>, o dos colores <code>#rrggbb #rrggbb</code>. <b>corte</b> = cambio rápido y suave (0,4 s); <b>fundido N</b> = transición de N segundos. ⏱ El reloj de arriba a la derecha del vídeo marca por dónde va la canción: haz clic en él y se apunta ese momento aquí. Sin líneas se usan Color A/B. El botón detecta las secciones y drops de la canción y te lo rellena.<br>⌨️ <b>En directo:</b> mientras suena, pulsa <code>1</code>…<code>9</code>, <code>0</code> para cambiar de paleta (con <b>Mayús</b> = corte brusco). Cada cambio se apunta aquí para que la próxima grabación lo repita.<br><code>1</code> noche · <code>2</code> fuego · <code>3</code> neon · <code>4</code> acido · <code>5</code> hielo · <code>6</code> sangre · <code>7</code> oro · <code>8</code> vapor · <code>9</code> toxico · <code>0</code> violeta</div>
+    </div>
+
+    <div style="margin-top:12px">
+      <label>4 · Escenas en el tiempo — cambia de estilo o de forma: <code>min:seg | estilo | fundido 3</code> · <code>min:seg | forma 2</code></label>
+      <div class="btns" style="margin-top:4px"><button id="markScene">⏱ Apuntar aquí</button></div>
+      <textarea id="sceneCues" style="min-height:60px;margin-top:8px" placeholder="Vacío = el estilo elegido toda la canción&#10;0:45 | nebulosa | fundido 3&#10;1:20 | espejo | corte&#10;2:00 | forma 2 | fundido 4"></textarea>
+      <div class="hint" id="sceneFb" style="margin-top:6px"></div>
+      <div class="hint">El estilo de arriba es el del principio. <b>Estilo</b>: escribe su nombre o parte de él (<code>nebulosa</code>, <code>portal</code>, <code>espejo</code>, <code>op-art</code>, <code>gyroid</code>, <code>tunel</code>…). <b>forma N</b>: cambia la forma dentro del estilo (giro, simetría, estructura; 0 = la inicial). Puedes juntar ambos: <code>1:20 | portal forma 3 | fundido 2</code>. Los cambios se aplican al momento. Si hay líneas de forma, mandan sobre la casilla “Escenas”.</div>
     </div>
 
     <div class="btns">
@@ -682,8 +690,8 @@ void main(){
  o=vec4(min(col,vec3(1.2)),1.0);}`;
 
 const FS_BLIT=`#version 300 es
-precision highp float;uniform sampler2D uTex;uniform vec2 uS;in vec2 vUv;out vec4 o;
-void main(){o=vec4(clamp(texture(uTex,vUv*uS).rgb,0.0,1.0),1.0);}`;
+precision highp float;uniform sampler2D uTex,uTex2;uniform vec2 uS;uniform float uK;in vec2 vUv;out vec4 o;
+void main(){vec3 a=clamp(texture(uTex,vUv*uS).rgb,0.0,1.0),b=clamp(texture(uTex2,vUv*uS).rgb,0.0,1.0);o=vec4(mix(a,b,uK),1.0);}`;
 const FS_TEXT=`#version 300 es
 precision highp float;uniform sampler2D uTex;uniform float uAlpha;in vec2 vUv;out vec4 o;
 void main(){vec4 t=texture(uTex,vUv);o=vec4(t.rgb,t.a*uAlpha);}`;
@@ -692,7 +700,7 @@ function makeScene(fs){const prog=program(VS,fs);const loc={};for(const n of UNA
 
 /* ===== Retroalimentacion: dos buffers que se alternan (cada imagen se pinta sobre la anterior) ===== */
 const FEEDBACK={mirror:1,paint:1,glitch:1};
-let fb=[],fbTex=[],fbIdx=0,blitProg,ubTex,ubS,sceneFB,sceneTex;
+let fb=[],fbTex=[],fbIdx=0,blitProg,ubTex,ubTex2,ubK,ubS,sceneFB,sceneTex,sceneFB2,sceneTex2,lastFBStyle='';
 const SCALES=[0.5,0.6,0.7,0.85,1.0];let qi=4,emaDt=1/60,qTimer=0,qGood=0,lastNow=performance.now();
 const HEAVY={blob:1,flight:1,fractal:1,kali:1,gyroid:1,aurora:1,nebula:1,kaleido:1,ink:1};
 function setQ(i){qi=Math.max(0,Math.min(SCALES.length-1,i));const q=S('qual');if(q)q.textContent='· calidad '+Math.round(SCALES[qi]*100)+'%';}
@@ -705,11 +713,12 @@ function initFB(){const ext=gl.getExtension('EXT_color_buffer_float');
     const f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tx,0);
     fb.push(f);fbTex.push(tx);}
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
-  blitProg=program(VS,FS_BLIT);ubTex=gl.getUniformLocation(blitProg,'uTex');ubS=gl.getUniformLocation(blitProg,'uS');
-  sceneTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,sceneTex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,1920,1080,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-  sceneFB=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFB);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,sceneTex,0);
+  blitProg=program(VS,FS_BLIT);ubTex=gl.getUniformLocation(blitProg,'uTex');ubS=gl.getUniformLocation(blitProg,'uS');ubTex2=gl.getUniformLocation(blitProg,'uTex2');ubK=gl.getUniformLocation(blitProg,'uK');
+  const mk=()=>{const tx=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tx);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,1920,1080,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    const f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tx,0);return [f,tx];};
+  [sceneFB,sceneTex]=mk();[sceneFB2,sceneTex2]=mk();
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);clearFB();}
 function clearFB(){if(!fb.length)return;for(const f of fb){gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);}gl.bindFramebuffer(gl.FRAMEBUFFER,null);}
 function initGL(){
@@ -865,10 +874,76 @@ function readAudio(dt){
 }
 
 let t0=performance.now();
+/* dibuja un estilo en un buffer interno y devuelve su textura */
+function renderStyle(key,t,dt,ca,cb,seed,RW,RH,slot){
+  const sc=scenes[key]||scenes.tunnel;const isFB=!!FEEDBACK[key]&&fb.length===2;
+  if(isFB&&lastFBStyle!==key){clearFB();lastFBStyle=key;}
+  gl.bindFramebuffer(gl.FRAMEBUFFER,isFB?fb[1-fbIdx]:(slot?sceneFB2:sceneFB));
+  gl.viewport(0,0,RW,RH);gl.useProgram(sc.prog);const L=sc.loc;
+  if(L.uRes)gl.uniform2f(L.uRes,RW,RH);
+  if(L.uTS)gl.uniform2f(L.uTS,RW/1920,RH/1080);if(L.uDt)gl.uniform1f(L.uDt,dt);
+  if(L.uBeat)gl.uniform1f(L.uBeat,beatAt(t));
+  if(L.uFlow)gl.uniform1f(L.uFlow,flowB);if(L.uFlowE)gl.uniform1f(L.uFlowE,flowE);
+  if(L.uTime)gl.uniform1f(L.uTime,t);
+  if(L.uBass)gl.uniform1f(L.uBass,lastBass);if(L.uMid)gl.uniform1f(L.uMid,lastMid);
+  if(L.uHigh)gl.uniform1f(L.uHigh,lastHigh);if(L.uLevel)gl.uniform1f(L.uLevel,lastLevel);
+  if(L.uFlash)gl.uniform1f(L.uFlash,flash);
+  if(L.uIntensity)gl.uniform1f(L.uIntensity,parseFloat(S('intensity').value));
+  if(L.uSpecN)gl.uniform1f(L.uSpecN,NB);
+  if(L.uSeed){const sa=secAt(t);gl.uniform1f(L.uSeed,seed);if(L.uSecT)gl.uniform1f(L.uSecT,t-sa.t0);}
+  if(L.uEnergy)gl.uniform1f(L.uEnergy,energyAt(t));
+  if(L.uColA)gl.uniform3f(L.uColA,ca[0],ca[1],ca[2]);
+  if(L.uColB)gl.uniform3f(L.uColB,cb[0],cb[1],cb[2]);
+  if(L.uImgAspect)gl.uniform1f(L.uImgAspect,imgAspect);
+  if(L.uHasImg)gl.uniform1f(L.uHasImg,hasImg?1.0:0.0);
+  if(L.uImg){gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,imgTex);gl.uniform1i(L.uImg,1);}
+  if(L.uKickAge)gl.uniform1f(L.uKickAge,playing?Math.max(0,t-kickT):10.0);
+  if(L.uHist){gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D,histTex);gl.uniform1i(L.uHist,4);gl.uniform1f(L.uHistRow,histRow);}
+  if(L.uSpec){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,specTex);gl.uniform1i(L.uSpec,0);}
+  if(L.uPrev){gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,fbTex[fbIdx]);gl.uniform1i(L.uPrev,5);}
+  gl.disable(gl.BLEND);gl.drawArrays(gl.TRIANGLES,0,3);
+  if(isFB){const tx=fbTex[1-fbIdx];fbIdx=1-fbIdx;return tx;}
+  return slot?sceneTex2:sceneTex;}
+/* ===== Escenas en el tiempo ===== */
+let sceneCues=[],sceneBad=[],playBaseStyle='opart',curSceneName='';
+function styleOpts(){return [...S('style').options].map(o=>({v:o.value,n:normTxt(o.textContent)}));}
+function findStyle(txt){txt=normTxt(txt).replace(/[()]/g,'').trim();if(!txt)return null;const L=styleOpts();
+  return (L.find(o=>o.v===txt)||L.find(o=>o.n===txt)||L.find(o=>o.n.startsWith(txt))||L.find(o=>o.n.includes(txt))||{}).v||null;}
+function styleName(v){const o=[...S('style').options].find(x=>x.value===v);return o?o.textContent:v;}
+function parseSceneCues(){const out=[],bad=[];
+  S('sceneCues').value.split('\n').forEach((raw,li)=>{const line=raw.trim();if(!line)return;
+    const m=line.match(/^(\d+(?:[:'.]\d+(?:[.,]\d+)?)?)\s*[|,;\-]?\s*(.*)$/);if(!m){bad.push(li+1);return;}
+    let ts=m[1].replace("'",":");if(!ts.includes(':')&&/^\d+\.\d\d$/.test(ts))ts=ts.replace('.',':');const t=parseTime(ts.replace(',','.'));
+    let rest=normTxt(m[2]).replace(/[|;,]/g,' ').replace(/\s+/g,' ').trim();let dur=2;
+    const tm=rest.match(/(corte|fundido|fade)\s*(\d+(?:[.,]\d+)?)?\s*s?\s*$/);
+    if(tm){rest=rest.slice(0,tm.index).trim();if(tm[1]==='corte')dur=0.4;else if(tm[2])dur=parseFloat(tm[2].replace(',','.'));}
+    let seed=null;const fm=rest.match(/(?:forma|escena)?\s*(\d+(?:\.\d+)?)$/);if(fm){seed=parseFloat(fm[1]);rest=rest.slice(0,fm.index).replace(/(forma|escena)\s*$/,'').trim();}
+    let style=null;if(rest){style=findStyle(rest);if(!style){bad.push(li+1);return;}}
+    if(isNaN(t)||(style===null&&seed===null)){bad.push(li+1);return;}
+    out.push({t0:t,style,seed,dur});});
+  sceneBad=bad;return out.sort((x,y)=>x.t0-y.t0);}
+function sceneFeedback(){const el=S('sceneFb');if(!el)return;
+  if(!sceneCues.length&&!sceneBad.length){el.textContent='';return;}
+  el.innerHTML=(sceneCues.length?'✓ '+sceneCues.length+' cambio(s): '+sceneCues.map(c=>'<code>'+(fmtT(c.t0)+' '+(c.style?styleName(c.style):'')+(c.seed!==null?' forma '+c.seed:'')).replace(/\s+/g,' ')+'</code>').join(' → '):'')+
+    (sceneBad.length?' <span class="err">⚠ No entiendo la(s) línea(s) '+sceneBad.join(', ')+' (usa p. ej. <code>1:20 | nebulosa | fundido 3</code> o <code>2:00 | forma 2</code>)</span>':'');}
+function ease(x){x=Math.min(1,Math.max(0,x));return x*x*(3-2*x);}
+/* que estilo(s) y forma tocan en el instante t */
+function sceneState(t,dt){
+  let a=playing?playBaseStyle:S('style').value,b=null,k=1,seed=0;
+  const useCues=playing&&sceneCues.length;
+  if(useCues){let cur=a;
+    for(const c of sceneCues){if(c.t0>t)break;if(c.style&&c.style!==cur){const kk=ease((t-c.t0)/Math.max(0.01,c.dur));
+        if(kk<1&&!(FEEDBACK[cur]&&FEEDBACK[c.style])){a=cur;b=c.style;k=kk;}else{a=c.style;b=null;k=1;}cur=c.style;}
+      else if(c.style){a=cur;b=null;k=1;}}
+    if(b===null)a=cur;}
+  const seedCues=useCues?sceneCues.filter(c=>c.seed!==null):[];
+  if(seedCues.length){for(const c of seedCues){if(c.t0>t)break;seed=seed+(c.seed-seed)*ease((t-c.t0)/Math.max(0.01,c.dur));}seedSm=seed;}
+  else{const sa=secAt(t);const tgt=S('secMorph').checked?sa.i:0;seedSm=fol(seedSm,tgt,dt,1.2,1.2);if(Math.abs(seedSm-tgt)<0.002)seedSm=tgt;seed=seedSm;}
+  return {a,b,k,seed,label:styleName(b&&k>0.5?b:a)};}
 function frame(){
   const now=performance.now(),dt=Math.min(0.1,Math.max(0.001,(now-lastNow)/1000));lastNow=now;
   const t=playing?songT():(now-t0)/1000;
-  if(now-timerLast>90){timerLast=now;if(playing)lastSongT=t;const tm=S('timer');if(tm)tm.textContent=clock(lastSongT)+(buffer?' / '+clock(buffer.duration).replace(/\.\d$/,''):'');}
+  if(now-timerLast>90){timerLast=now;if(playing)lastSongT=t;const tm=S('timer');if(tm)tm.textContent=clock(lastSongT)+(buffer?' / '+clock(buffer.duration).replace(/\.\d$/,''):'')+(playing&&sceneCues.length?' · '+curSceneName:'');}
   readAudio(dt);
   /* calidad automatica: si no llega a ~60 fps baja la resolucion interna; si sobra, la sube */
   emaDt=emaDt*0.93+dt*0.07;qTimer+=dt;
@@ -877,40 +952,18 @@ function frame(){
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D,specTex);
   gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,NB,1,gl.RED,gl.UNSIGNED_BYTE,specData);
-  const sc=scenes[S('style').value]||scenes.tunnel;const isFB=!!FEEDBACK[S('style').value]&&fb.length===2;const lowRes=!isFB&&qi<SCALES.length-1&&!!sceneFB;
-  if(isFB)gl.bindFramebuffer(gl.FRAMEBUFFER,fb[1-fbIdx]);else if(lowRes)gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFB);
-  if(sc){
-    const VW=(isFB||lowRes)?RW:1920,VH=(isFB||lowRes)?RH:1080;
-    gl.viewport(0,0,VW,VH);gl.useProgram(sc.prog);const L=sc.loc;
-    if(L.uRes)gl.uniform2f(L.uRes,VW,VH);
-    if(L.uTS)gl.uniform2f(L.uTS,VW/1920,VH/1080);if(L.uDt)gl.uniform1f(L.uDt,dt);
-    if(L.uBeat)gl.uniform1f(L.uBeat,beatAt(t));
-    if(L.uFlow)gl.uniform1f(L.uFlow,flowB);if(L.uFlowE)gl.uniform1f(L.uFlowE,flowE);
-    if(L.uTime)gl.uniform1f(L.uTime,t);
-    if(L.uBass)gl.uniform1f(L.uBass,lastBass);
-    if(L.uMid)gl.uniform1f(L.uMid,lastMid);
-    if(L.uHigh)gl.uniform1f(L.uHigh,lastHigh);
-    if(L.uLevel)gl.uniform1f(L.uLevel,lastLevel);
-    if(L.uFlash)gl.uniform1f(L.uFlash,flash);
-    if(L.uIntensity)gl.uniform1f(L.uIntensity,parseFloat(S('intensity').value));
-    if(L.uSpecN)gl.uniform1f(L.uSpecN,NB);
-    const [ca,cb]=currentColors(t);
-    if(L.uSeed){const sc=secAt(t);const tgt=S('secMorph').checked?sc.i:0;seedSm=fol(seedSm,tgt,dt,1.2,1.2);if(Math.abs(seedSm-tgt)<0.002)seedSm=tgt;gl.uniform1f(L.uSeed,seedSm);if(L.uSecT)gl.uniform1f(L.uSecT,t-sc.t0);if(L.uEnergy)gl.uniform1f(L.uEnergy,energyAt(t));}
-    if(L.uColA)gl.uniform3f(L.uColA,ca[0],ca[1],ca[2]);
-    if(L.uColB)gl.uniform3f(L.uColB,cb[0],cb[1],cb[2]);
-    if(L.uImgAspect)gl.uniform1f(L.uImgAspect,imgAspect);
-    if(L.uHasImg)gl.uniform1f(L.uHasImg,hasImg?1.0:0.0);
-    if(L.uImg){gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,imgTex);gl.uniform1i(L.uImg,1);}
-    if(L.uKickAge)gl.uniform1f(L.uKickAge,playing?Math.max(0,t-kickT):10.0);
-    if(L.uHist){if(t-histLast>1/40||t<histLast){histLast=t;histRow=(histRow+1)%64;gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D,histTex);
-        gl.texSubImage2D(gl.TEXTURE_2D,0,0,histRow,NB,1,gl.RED,gl.UNSIGNED_BYTE,specData);}
-      gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D,histTex);gl.uniform1i(L.uHist,4);gl.uniform1f(L.uHistRow,histRow);}
-    if(L.uSpec){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,specTex);gl.uniform1i(L.uSpec,0);}
-    if(L.uPrev){gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,fbTex[fbIdx]);gl.uniform1i(L.uPrev,5);}
-    gl.disable(gl.BLEND);gl.drawArrays(gl.TRIANGLES,0,3);
-    if(isFB||lowRes){gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,1920,1080);gl.useProgram(blitProg);
-      gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,isFB?fbTex[1-fbIdx]:sceneTex);gl.uniform1i(ubTex,5);gl.uniform2f(ubS,VW/1920,VH/1080);gl.drawArrays(gl.TRIANGLES,0,3);if(isFB)fbIdx=1-fbIdx;}
-  }
+  if(t-histLast>1/40||t<histLast){histLast=t;histRow=(histRow+1)%64;gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D,histTex);
+    gl.texSubImage2D(gl.TEXTURE_2D,0,0,histRow,NB,1,gl.RED,gl.UNSIGNED_BYTE,specData);}
+  const [ca,cb]=currentColors(t);
+  const SC=sceneState(t,dt);
+  const texA=renderStyle(SC.a,t,dt,ca,cb,SC.seed,RW,RH,0);
+  let texB=texA,k=0;
+  if(SC.b&&SC.k<1){texB=renderStyle(SC.b,t,dt,ca,cb,SC.seed,RW,RH,1);k=SC.k;}
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,1920,1080);gl.useProgram(blitProg);gl.disable(gl.BLEND);
+  gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,texA);gl.uniform1i(ubTex,5);
+  gl.activeTexture(gl.TEXTURE6);gl.bindTexture(gl.TEXTURE_2D,texB);gl.uniform1i(ubTex2,6);
+  gl.uniform1f(ubK,k);gl.uniform2f(ubS,RW/1920,RH/1080);gl.drawArrays(gl.TRIANGLES,0,3);
+  curSceneName=SC.label;
   if(playing){const et=actx.currentTime-startTime;let act=-1,alpha=0;
     for(let i=0;i<cues.length;i++){const a=cueAlpha(cues[i],et);if(a>0){act=i;alpha=a;break;}}
     if(act>=0){if(act!==activeCueId){drawTextTexture(cues[act]);activeCueId=act;}
@@ -953,6 +1006,8 @@ S('image').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Ima
     hasImg=true;S('style').value='image';clearFB();setStatus('Imagen cargada. Previsualiza o graba en estilo “Imagen”.');URL.revokeObjectURL(img.src);};
   img.onerror=()=>showErr('No se pudo cargar la imagen.');img.src=URL.createObjectURL(f);};
 S('genCols').onclick=()=>{genColorCues();colorCues=parseColorCues();colFeedback();};
+S('sceneCues').addEventListener('input',()=>{sceneCues=parseSceneCues();sceneFeedback();});
+S('markScene').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('sceneCues');ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+fmtT(tt)+' | forma 1 | fundido 2';sceneCues=parseSceneCues();sceneFeedback();setStatus('Apuntado '+fmtT(tt)+' en Escenas en el tiempo.');};
 S('colCues').addEventListener('input',()=>{colorCues=parseColorCues();colFeedback();});
 S('cues').addEventListener('input',()=>{cues=parseCues();activeCueId=-1;});
 S('timer').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('colCues');
@@ -960,7 +1015,7 @@ S('timer').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('colCues
   colorCues=parseColorCues();colFeedback();
   setStatus('Apuntado '+fmtT(tt)+' en Colores en el tiempo: cambia "neon" por la paleta que quieras.');};
 function applyPreset(){}
-S('style').onchange=()=>{applyPreset();clearFB();setQ(HEAVY[S('style').value]?2:4);qGood=0;};
+S('style').onchange=()=>{applyPreset();clearFB();playBaseStyle=S('style').value;setQ(HEAVY[S('style').value]?2:4);qGood=0;};
 /* atajos: 1-9 y 0 cambian de paleta en directo (Mayus = corte brusco). Se apuntan en 'Colores en el tiempo' */
 const KEYPAL=['violeta','noche','fuego','neon','acido','hielo','sangre','oro','vapor','toxico'];
 document.addEventListener('keydown',e=>{const tg=(e.target.tagName||'').toLowerCase();if(tg==='textarea'||tg==='input'||tg==='select')return;
@@ -971,9 +1026,9 @@ document.addEventListener('keydown',e=>{const tg=(e.target.tagName||'').toLowerC
   else{S('colA').value=PRESETS[name][0];S('colB').value=PRESETS[name][1];setStatus('Paleta '+name);}});
 async function ensureCtx(){if(actx&&actx.state==='suspended')await actx.resume();}
 S('play').onclick=async()=>{if(!buffer){setStatus('Primero carga una canción.');return;}
-  await ensureCtx();cues=parseCues();colorCues=parseColorCues();colFeedback();activeCueId=-1;stopAudio();startAudio();S('stop').disabled=false;setStatus('Previsualizando…');};
+  await ensureCtx();cues=parseCues();colorCues=parseColorCues();colFeedback();sceneCues=parseSceneCues();sceneFeedback();playBaseStyle=S('style').value;activeCueId=-1;stopAudio();startAudio();S('stop').disabled=false;setStatus('Previsualizando…');};
 S('record').onclick=async()=>{if(!buffer){setStatus('Primero carga una canción.');return;}
-  await ensureCtx();cues=parseCues();colorCues=parseColorCues();colFeedback();activeCueId=-1;S('saveZone').style.display='none';
+  await ensureCtx();cues=parseCues();colorCues=parseColorCues();colFeedback();sceneCues=parseSceneCues();sceneFeedback();playBaseStyle=S('style').value;activeCueId=-1;S('saveZone').style.display='none';
   stopAudio();startAudio();startRec();S('play').disabled=true;S('record').disabled=true;S('stop').disabled=false;
   setStatus('🔴 Grabando la canción entera… no cambies de pestaña. Parará sola al acabar.');};
 S('stop').onclick=()=>{stopAudio();if(recorder&&recorder.state==='recording')recorder.stop();else resetButtons();setStatus('Parado.');};
