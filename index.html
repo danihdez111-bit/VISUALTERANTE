@@ -46,7 +46,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.4 · 9 estilos</small></h1>
+  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.5 · 9 estilos</small></h1>
   <p class="sub">Elige estilo, carga una canción, pon las palabras con su tiempo y graba. Render por GPU en tu navegador.</p>
 
   <div class="stage">
@@ -177,10 +177,10 @@ const FS_TUNNEL=HEAD+`void main(){
  float speed=0.5+uBass*2.6*uIntensity;float depth=0.40/r+uTime*speed;
  float a2=an+uTime*0.04+0.15*sin(uTime*0.07);
  float pu=smoothstep(0.47,0.5,abs(fract(a2*18.0)-0.5));float pv=smoothstep(0.47,0.5,abs(fract(depth*3.0)-0.5));
- float grid=clamp(pu+pv,0.0,1.0);float plasma=0.5+0.5*sin(a2*10.0+depth*3.5+uTime*0.6);
- float tex=fbm(vec2(a2*10.0,depth*2.2));float lum=clamp(0.42*grid+0.30*plasma+0.42*tex,0.0,1.0);
+ float grid=clamp(pu+pv,0.0,1.0);float plasma=0.5+0.5*sin(a2*12.5663706+depth*3.5+uTime*0.6);
+ float sa=fract(a2);float tex=mix(fbm(vec2(sa*10.0,depth*2.2)),fbm(vec2((sa-1.0)*10.0,depth*2.2)),smoothstep(0.0,1.0,sa));float lum=clamp(0.42*grid+0.30*plasma+0.42*tex,0.0,1.0);
  float fog=pow(clamp(r*1.25,0.0,1.0),0.9);lum*=fog*(0.5+0.9*uLevel);vec3 col=palette(lum);
- float sp=texture(uSpec,vec2(fract(an+0.5),0.5)).r;float r0=0.13+0.05*uBass*uIntensity;float len=0.015+sp*0.34*uIntensity;
+ float sp=texture(uSpec,vec2(0.06+abs(an)*1.86,0.5)).r;float r0=0.13+0.05*uBass*uIntensity;float len=0.015+sp*0.34*uIntensity;
  float fill=smoothstep(r0+len,r0,r)*step(r0,r);float tip=smoothstep(0.006,0.0,abs(r-(r0+len)));
  col+=palette(0.55+0.4*sp)*fill*0.9;col+=palette(1.0)*tip*0.8;
  col+=vec3(1.0,0.95,0.86)*uFlash*exp(-r*2.8)*1.6*uIntensity;col+=palette(0.92)*exp(-r*6.0)*(0.25+uHigh*0.8);
@@ -215,9 +215,9 @@ const FS_SYNTH=HEAD+`void main(){
  } else {
    float yy=max(-uv.y,0.0001);float persp=1.0/yy;
    float scroll=uTime*(1.0+uBass*2.2*uIntensity);
-   float gx=abs(fract(uv.x*persp*0.5)-0.5);
-   float gz=abs(fract(persp*0.5-scroll)-0.5);
-   float grid=smoothstep(0.5,0.46,min(gx,gz));
+   vec2 G=vec2(uv.x*persp*0.5,persp*0.5-scroll);vec2 fw=fwidth(G)*1.3+0.025;
+   vec2 gl2=smoothstep(0.5-fw,vec2(0.5),abs(fract(G)-0.5));
+   float grid=max(gl2.x,gl2.y)*clamp(1.0-fw.y*1.5,0.0,1.0);
    float fade=clamp(yy*2.2,0.0,1.0);
    col=mix(vec3(0.02,0.0,0.05),mix(uColA,uColB,0.4),grid*fade);
  }
@@ -229,7 +229,7 @@ const FS_PARTICLES=HEAD+`void main(){
  vec3 col=vec3(0.0);float sp3=1.0+uBass*3.0*uIntensity;
  for(int i=0;i<3;i++){float fi=float(i);float rr=r*(1.0+fi*0.5);
    float flow=fract(rr*5.0-uTime*sp3+fi*0.33);
-   float h=hash(vec2(floor(a*24.0),floor(rr*5.0-uTime*sp3+fi*0.33)));
+   float h=hash(vec2(floor(fract(a/6.2831853+0.5)*24.0),floor(rr*5.0-uTime*sp3+fi*0.33)));
    float s=step(0.9,h)*smoothstep(0.5,0.0,abs(flow-0.5));
    col+=palette(0.55+0.2*fi)*s;}
  col+=palette(0.95)*exp(-r*3.5)*(0.3+uLevel);
@@ -588,7 +588,8 @@ function buildGraph(){srcNode=actx.createBufferSource();srcNode.buffer=buffer;
   freqBuf=new Uint8Array(analyser.frequencyBinCount);msDest=actx.createMediaStreamDestination();
   srcNode.connect(analyser);analyser.connect(actx.destination);analyser.connect(msDest);}
 function startAudio(){buildGraph();srcNode.start(0);startTime=actx.currentTime;playing=true;kickT=-99;facingS=(pathAt(0.1).bx-pathAt(-0.1).bx)>=0?1:-1;
-  srcNode.onended=()=>{playing=false;if(recorder&&recorder.state==='recording')recorder.stop();};}
+  const node=srcNode;node.onended=()=>{if(node!==srcNode)return;playing=false;
+    if(recorder&&recorder.state==='recording')recorder.stop();else{resetButtons();setStatus('Fin de la canción. Puedes previsualizar o grabar otra vez.');}};}
 function stopAudio(){try{srcNode&&srcNode.stop();}catch(e){}playing=false;}
 
 let lastBass=0,lastMid=0,lastHigh=0,lastLevel=0;
