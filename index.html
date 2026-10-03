@@ -85,7 +85,7 @@
 <div class="app">
   <div class="left">
     <div class="top">
-      <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.18 · 18 estilos <span id="qual"></span></small></h1>
+      <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.19 · 18 estilos <span id="qual"></span></small></h1>
     </div>
     <div id="stageBox">
       <div class="stage">
@@ -100,13 +100,19 @@
     </div>
     <div class="transport">
       <button id="play">▶ Previsualizar</button>
-      <button id="record" class="primary">⏺ Grabar (1080p)</button>
+      <button id="record" class="primary">⏺ Grabar MP4 (1080p)</button>
       <button id="stop" class="danger" disabled>⏹ Parar</button>
       <div class="status" id="status">Listo. Carga una canción para empezar.</div>
     </div>
   </div>
 
   <div class="right">
+    <details class="sec" open><summary>📁 Proyecto</summary><div class="body">
+      <div class="row"><input type="text" id="projName" placeholder="Nombre del visualizer (p. ej. CHUCHE)" style="flex:1;min-width:0;background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit"></div>
+      <div class="row"><button id="saveProj">💾 Guardar proyecto</button><button id="openProj">📂 Abrir proyecto</button><input type="file" id="projFile" accept=".json,application/json" style="display:none"></div>
+      <div class="hint" id="projInfo">Se guarda solo en este navegador mientras trabajas. Con “Guardar proyecto” te llevas un archivo para cada canción.</div>
+    </div></details>
+
     <details class="sec" open><summary>1 · Básico</summary><div class="body">
       <div class="grid2">
         <div class="full">
@@ -868,7 +874,7 @@ function parseColorCues(){const out=[],bad=[];
     if(isNaN(t)||!c){bad.push(li+1);return;}
     out.push({t0:t,A:c[0],B:c[1],dur,name:rest});});
   colBad=bad;return out.sort((x,y)=>x.t0-y.t0);}
-function colFeedback(){drawMarks();const el=S('colFb');if(!el)return;
+function colFeedback(){drawMarks();autosave();const el=S('colFb');if(!el)return;
   if(!colorCues.length&&!colBad.length){el.textContent='';return;}
   el.innerHTML=(colorCues.length?'✓ '+colorCues.length+' cambio(s): '+colorCues.map(c=>'<code>'+fmtT(c.t0)+' '+c.name+'</code>').join(' → '):'')+
     (colBad.length?' <span class="err">⚠ No entiendo la(s) línea(s) '+colBad.join(', ')+' (usa p. ej. <code>1:20 | neon | fundido 2</code>)</span>':'');}
@@ -967,7 +973,7 @@ function parseSceneCues(){const out=[],bad=[];
     if(isNaN(t)||(style===null&&seed===null)){bad.push(li+1);return;}
     out.push({t0:t,style,seed,dur});});
   sceneBad=bad;return out.sort((x,y)=>x.t0-y.t0);}
-function sceneFeedback(){drawMarks();const el=S('sceneFb');if(!el)return;
+function sceneFeedback(){drawMarks();autosave();const el=S('sceneFb');if(!el)return;
   if(!sceneCues.length&&!sceneBad.length){el.textContent='';return;}
   el.innerHTML=(sceneCues.length?'✓ '+sceneCues.length+' cambio(s): '+sceneCues.map(c=>'<code>'+(fmtT(c.t0)+' '+(c.style?styleName(c.style):'')+(c.seed!==null?' forma '+c.seed:'')).replace(/\s+/g,' ')+'</code>').join(' → '):'')+
     (sceneBad.length?' <span class="err">⚠ No entiendo la(s) línea(s) '+sceneBad.join(', ')+' (usa p. ej. <code>1:20 | nebulosa | fundido 3</code> o <code>2:00 | forma 2</code>)</span>':'');}
@@ -1020,7 +1026,7 @@ function frame(){
 }
 
 let recorder=null,chunks=[],recTimer=null;
-function pickMime(){const c=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+function pickMime(){const c=['video/mp4;codecs=avc1.640028,mp4a.40.2','video/mp4;codecs=avc1.4d0028,mp4a.40.2','video/mp4;codecs=avc1.42E028,mp4a.40.2','video/mp4;codecs=avc1,mp4a.40.2','video/mp4;codecs=avc3,mp4a.40.2','video/mp4;codecs=avc1,opus','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
   for(const m of c)if(window.MediaRecorder&&MediaRecorder.isTypeSupported(m))return m;return '';}
 function startRec(){const vstream=S('gl').captureStream(30);
   const combined=new MediaStream([...vstream.getVideoTracks(),...msDest.stream.getAudioTracks()]);
@@ -1029,21 +1035,23 @@ function startRec(){const vstream=S('gl').captureStream(30);
   S('recPill').style.display='flex';const rs=actx.currentTime;
   recTimer=setInterval(()=>{const s=Math.floor(actx.currentTime-rs);S('recTime').textContent='REC '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0');},500);}
 async function onRecStop(){clearInterval(recTimer);S('recPill').style.display='none';
-  const blob=new Blob(chunks,{type:'video/webm'});
-  setStatus('Grabación lista ('+(blob.size/1048576).toFixed(1)+' MB). Preparando descarga…');let saved=false;
+  const mt=(recorder&&recorder.mimeType)||'video/webm',isMp4=mt.includes('mp4'),ext=isMp4?'mp4':'webm';
+  const fname=(S('projName').value.trim()||'BABUI_visualizer').replace(/[^\w\-áéíóúñÁÉÍÓÚÑ ]+/g,'').replace(/\s+/g,'_')+'_1080p.'+ext;
+  const blob=new Blob(chunks,{type:mt.split(';')[0]});
+  setStatus('Grabación lista: '+ext.toUpperCase()+' de '+(blob.size/1048576).toFixed(1)+' MB. Preparando descarga…'+(isMp4?'':' (tu navegador no graba MP4: usa Chrome o Edge actualizados)'));let saved=false;
   try{const dl=window.claude&&window.claude.use?await window.claude.use('downloads'):null;
-    if(dl){const r=await dl.save({filename:'BABUI_visualizer_1080p.webm',data:blob});
-      if(r&&r.status==='saved'){setStatus('✅ Vídeo guardado. ¡Listo para subir!');saved=true;}}
+    if(dl){const r=await dl.save({filename:fname,data:blob});
+      if(r&&r.status==='saved'){setStatus('✅ '+fname+' guardado. ¡Listo para subir!');saved=true;}}
   }catch(e){if(e&&e.code==='declined')setStatus('Descarga cancelada. Tienes el vídeo abajo.');
     else setStatus('Sin descarga nativa; usa el vídeo de abajo (clic derecho → Guardar).');}
   const url=URL.createObjectURL(blob);S('saveZone').style.display='block';S('saveVid').src=url;
-  if(!saved){try{const a=document.createElement('a');a.href=url;a.download='BABUI_visualizer_1080p.webm';document.body.appendChild(a);a.click();a.remove();saved=true;}catch(_){}}
+  if(!saved){try{const a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();a.remove();saved=true;}catch(_){}}
   S('saveMsg').innerHTML='Si no se descargó solo, aquí lo tienes: clic derecho → “Guardar vídeo como…”.';
   resetButtons();}
 
 function resetButtons(){S('play').disabled=false;S('record').disabled=false;S('stop').disabled=true;S('seek').disabled=!buffer;}
 S('intensity').oninput=e=>S('intV').textContent=parseFloat(e.target.value).toFixed(2);
-S('audio').onchange=async e=>{const f=e.target.files[0];if(!f)return;
+S('audio').onchange=async e=>{const f=e.target.files[0];if(!f)return;songName=f.name;autosave();
   try{setStatus('Decodificando audio…');await loadAudio(f);}catch(err){showErr('Error al cargar audio:\n'+err.message);}};
 S('image').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Image();
   img.onload=()=>{imgAspect=img.width/img.height;gl.bindTexture(gl.TEXTURE_2D,imgTex);
@@ -1066,11 +1074,32 @@ function fitStage(){const box=S('stageBox'),st=document.querySelector('.stage');
   if(innerWidth<=980){st.style.width='';st.style.height='';return;}
   const W=box.clientWidth,H=box.clientHeight;let w=W,h=W*9/16;if(h>H){h=H;w=H*16/9;}st.style.width=Math.floor(w)+'px';st.style.height=Math.floor(h)+'px';}
 addEventListener('resize',fitStage);fitStage();setTimeout(fitStage,300);
+setTimeout(()=>{try{const sv=localStorage.getItem('vt_project');if(sv){const o=JSON.parse(sv);applyProject(o);songName=o.song||'';
+  S('projInfo').textContent='↺ Recuperado tu último trabajo'+(o.projName?' (“'+o.projName+'”)':'')+'.'+(o.song?' Carga su canción: '+o.song:'');}}catch(e){}},0);
 {const cw=S('colWhat');const cur=document.createElement('option');cur.value='__actual';cur.textContent='Color A/B actuales';cw.appendChild(cur);
   Object.keys(PRESETS).forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;cw.appendChild(o);});cw.value='neon';}
 S('markCol').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('colCues');const w=S('colWhat').value;
   const pal=w==='__actual'?S('colA').value+' '+S('colB').value:w;const line=fmtT(tt)+' | '+pal+' | '+S('colTr').value;
   ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+line;colorCues=parseColorCues();colFeedback();setStatus('Apuntado: '+line);};
+/* ===== Proyecto ===== */
+const PKEYS=['style','colA','colB','intensity','cues','colCues','sceneCues','projName'],PCHK=['liveCol','secMorph'];let songName='',autoT=null,restoring=false;
+function getProject(){const o={app:'VISUALTERANTE',v:1,song:songName,saved:new Date().toISOString()};PKEYS.forEach(k=>o[k]=S(k).value);PCHK.forEach(k=>o[k]=S(k).checked);return o;}
+function applyProject(o){if(!o||o.app!=='VISUALTERANTE')throw new Error('No es un proyecto de VISUALTERANTE');restoring=true;
+  PKEYS.forEach(k=>{if(o[k]!==undefined&&S(k))S(k).value=o[k];});PCHK.forEach(k=>{if(o[k]!==undefined)S(k).checked=!!o[k];});
+  S('intV').textContent=parseFloat(S('intensity').value).toFixed(2);playBaseStyle=S('style').value;clearFB();
+  cues=parseCues();activeCueId=-1;colorCues=parseColorCues();colFeedback();sceneCues=parseSceneCues();sceneFeedback();restoring=false;}
+function autosave(){if(restoring)return;clearTimeout(autoT);autoT=setTimeout(()=>{try{localStorage.setItem('vt_project',JSON.stringify(getProject()));
+  const d=new Date();S('projInfo').textContent='✓ Guardado automático '+d.toLocaleTimeString().slice(0,5)+(songName?' · canción: '+songName:'');}catch(e){}},500);}
+document.addEventListener('input',e=>{if(e.target&&e.target.id!=='seek')autosave();});
+document.addEventListener('change',e=>{if(e.target&&e.target.id!=='seek')autosave();});
+S('saveProj').onclick=async()=>{const o=getProject();const name=(o.projName||'visualizer').trim().replace(/[^\w\-áéíóúñÁÉÍÓÚÑ ]+/g,'').replace(/\s+/g,'_')||'visualizer';
+  const blob=new Blob([JSON.stringify(o,null,2)],{type:'application/json'});const fn=name+'.visualterante.json';let ok=false;
+  try{const dl=window.claude&&window.claude.use?await window.claude.use('downloads'):null;if(dl){const r=await dl.save({filename:fn,data:blob});ok=r&&r.status==='saved';}}catch(e){}
+  if(!ok){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fn;document.body.appendChild(a);a.click();a.remove();}
+  setStatus('💾 Proyecto guardado como '+fn);};
+S('openProj').onclick=()=>S('projFile').click();
+S('projFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const o=JSON.parse(await f.text());applyProject(o);autosave();
+  setStatus('📂 Proyecto “'+(o.projName||f.name)+'” abierto.'+(o.song?' Carga su canción: '+o.song:''));}catch(err){showErr('No se pudo abrir el proyecto: '+err.message);}e.target.value='';};
 S('genCols').onclick=()=>{genColorCues();colorCues=parseColorCues();colFeedback();};
 S('sceneCues').addEventListener('input',()=>{sceneCues=parseSceneCues();sceneFeedback();});
 S('markScene').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('sceneCues');const what=S('sceneWhat').value;let line;
