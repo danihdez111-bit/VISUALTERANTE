@@ -49,111 +49,135 @@
   .hint{font-size:12px;color:var(--mut);line-height:1.5;margin-top:8px}
   #saveZone{margin-top:12px;display:none}
   #saveZone video{width:100%;max-width:420px;border:1px solid var(--line);border-radius:10px}
+  /* ===== distribucion a pantalla completa ===== */
+  html,body{height:100%}
+  body{overflow:hidden}
+  .app{display:grid;grid-template-columns:minmax(0,1fr) clamp(330px,29vw,470px);height:100vh}
+  .left{display:flex;flex-direction:column;min-width:0;min-height:0;padding:10px 14px 10px 16px;gap:6px}
+  .top h1{margin:0}
+  #stageBox{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+  .stage{flex:none}
+  .seekwrap{margin-top:0}
+  .transport{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .transport button{padding:8px 14px}
+  .transport .status{margin:0;flex:1;min-width:180px}
+  .right{border-left:1px solid var(--line);background:var(--panel);overflow-y:auto;padding:10px 12px}
+  .sec{border:1px solid var(--line);border-radius:10px;background:var(--panel2);margin:0 0 10px}
+  .sec>summary{font-weight:700;font-size:13px;color:var(--txt);padding:9px 12px;cursor:pointer}
+  .sec .body{padding:0 12px 12px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .grid2 .full{grid-column:1/-1}
+  .chk{display:flex!important;align-items:center;gap:6px;margin:4px 0!important;font-size:12.5px!important;color:var(--txt)!important}
+  .chk input{width:auto}
+  .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .row select{flex:1;width:auto;min-width:0}
+  .row button{padding:8px 12px;white-space:nowrap}
+  .right textarea{min-height:92px}
+  .help{margin-top:6px}.help>summary{font-size:12px}
+  #saveZone video{max-width:100%}
+  @media (max-width:980px){body{overflow:auto}.app{grid-template-columns:1fr;height:auto}.right{border-left:0;overflow:visible}
+    #stageBox{flex:none}.stage{width:100%!important;height:auto!important}}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.16 · 18 estilos <span id="qual"></span></small></h1>
-  <p class="sub">Elige estilo, carga una canción, pon las palabras con su tiempo y graba. Render por GPU en tu navegador.</p>
-
-  <div class="stage">
-    <canvas id="gl" width="1920" height="1080"></canvas>
-    <div class="timer" id="timer" title="Clic: apuntar este momento en Colores en el tiempo">0:00.0</div>
-    <div class="rec" id="recPill"><span class="dot"></span><span id="recTime">REC 0:00</span></div>
-  </div>
-  <div class="seekwrap">
-    <div id="marks"></div>
-    <input type="range" id="seek" min="0" max="1" step="0.1" value="0" disabled title="Arrastra o haz clic para saltar a ese momento">
-  </div>
-
-  <div class="panel">
-    <div class="grid">
-      <div>
-        <label>Estilo</label>
-        <select id="style">
-          <optgroup label="Experimentales">
-          <option value="opart">Op-Art hipnótico</option>
-          <option value="kali">Portal fractal</option>
-          <option value="gyroid">Gyroid infinito</option>
-          <option value="mirror">Espejo infinito (eco)</option>
-          <option value="paint">Pintura de la música (eco)</option>
-          <option value="glitch">Glitch / datamosh (eco)</option>
-          </optgroup>
-          <optgroup label="Clásicos">
-          <option value="tunnel">Túnel retro</option>
-          <option value="kaleido">Caleidoscopio</option>
-          <option value="synth">Synthwave</option>
-          <option value="particles">Partículas</option>
-          <option value="image">Imagen</option>
-          <option value="nebula">Nebulosa (galaxia)</option>
-          <option value="ridges">Montañas de espectro 3D</option>
-          <option value="blob">Metal líquido 3D</option>
-          <option value="flight">Vuelo nocturno 3D</option>
-          <option value="fractal">Túnel fractal 3D</option>
-          <option value="ink">Tinta líquida</option>
-          <option value="aurora">Aurora boreal</option>
-          </optgroup>
-        </select>
-      </div>
-      <div>
-        <label>1 · Canción (WAV o MP3)</label>
-        <input type="file" id="audio" accept="audio/*">
-      </div>
-      <div>
-        <label>Imagen (solo estilo “Imagen”)</label>
-        <input type="file" id="image" accept="image/*">
-      </div>
-      <div>
-        <label>Color A</label>
-        <input type="color" id="colA" value="#4aa8e0">
-      </div>
-      <div>
-        <label>Color B</label>
-        <input type="color" id="colB" value="#d2b482">
-      </div>
-      <div>
-        <label>Intensidad: <b id="intV">1.0</b></label>
-        <input type="range" id="intensity" min="0.4" max="2" step="0.05" value="1">
-      </div>
-      <div>
-        <label>Escenas</label>
-        <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:12.5px;color:var(--txt)"><input type="checkbox" id="secMorph" style="width:auto"> Cambiar de forma en cada sección (fundido lento)</label>
+<div class="app">
+  <div class="left">
+    <div class="top">
+      <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.17 · 18 estilos <span id="qual"></span></small></h1>
+    </div>
+    <div id="stageBox">
+      <div class="stage">
+        <canvas id="gl" width="1920" height="1080"></canvas>
+        <div class="timer" id="timer" title="Clic: apuntar este momento en Colores en el tiempo">0:00.0</div>
+        <div class="rec" id="recPill"><span class="dot"></span><span id="recTime">REC 0:00</span></div>
       </div>
     </div>
-
-    <div style="margin-top:12px">
-      <label>2 · Palabras temporizadas — una por línea: <code>min:seg | palabra | posición</code></label>
-      <textarea id="cues" placeholder="Vacío = sin palabras. Ejemplo: 1:54 | hola | centro"></textarea>
-      <div class="hint">Posiciones: <code>centro</code>, <code>arriba</code>, <code>abajo</code>. Cada palabra entra difuminada en 0,5 s y se va sola. Admite decimales (<code>1:53.5</code>).</div>
+    <div class="seekwrap">
+      <div id="marks"></div>
+      <input type="range" id="seek" min="0" max="1" step="0.1" value="0" disabled title="Arrastra o haz clic para saltar a ese momento (flechas ← → = 5 s)">
     </div>
-
-    <div style="margin-top:12px">
-      <label>3 · Colores en el tiempo — una línea por cambio: <code>min:seg | paleta | corte</code> o <code>| fundido 3</code></label>
-      <div class="btns" style="margin-top:4px"><button id="genCols">🎨 Generar desde la canción</button>
-        <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:12.5px;color:var(--txt)"><input type="checkbox" id="liveCol" checked style="width:auto"> Colores vivos (respiran con la música)</label></div>
-      <textarea id="colCues" style="min-height:70px;margin-top:8px" placeholder="0:00 | noche | corte&#10;0:32 | neon | corte&#10;1:04 | #ff3b00 #ffd36b | fundido 4"></textarea>
-      <div class="hint" id="colFb" style="margin-top:6px"></div>
-      <div class="hint">Paletas: <code>noche</code> <code>fuego</code> <code>neon</code> <code>acido</code> <code>hielo</code> <code>sangre</code> <code>oro</code> <code>vapor</code> <code>toxico</code> <code>ocaso</code> <code>oceano</code> <code>violeta</code> <code>mono</code> <code>selva</code>, o dos colores <code>#rrggbb #rrggbb</code>. <b>corte</b> = cambio rápido y suave (0,4 s); <b>fundido N</b> = transición de N segundos. ⏱ El reloj de arriba a la derecha del vídeo marca por dónde va la canción: haz clic en él y se apunta ese momento aquí. Sin líneas se usan Color A/B. El botón detecta las secciones y drops de la canción y te lo rellena.<br>⌨️ <b>En directo:</b> mientras suena, pulsa <code>1</code>…<code>9</code>, <code>0</code> para cambiar de paleta (con <b>Mayús</b> = corte brusco). Cada cambio se apunta aquí para que la próxima grabación lo repita.<br><code>1</code> noche · <code>2</code> fuego · <code>3</code> neon · <code>4</code> acido · <code>5</code> hielo · <code>6</code> sangre · <code>7</code> oro · <code>8</code> vapor · <code>9</code> toxico · <code>0</code> violeta</div>
-    </div>
-
-    <div style="margin-top:12px">
-      <label>4 · Escenas en el tiempo — cambia de estilo o de forma: <code>min:seg | estilo | fundido 3</code> · <code>min:seg | forma 2</code></label>
-      <div class="btns" style="margin-top:4px"><button id="markScene">⏱ Apuntar aquí</button></div>
-      <textarea id="sceneCues" style="min-height:60px;margin-top:8px" placeholder="Vacío = el estilo elegido toda la canción&#10;0:45 | nebulosa | fundido 3&#10;1:20 | espejo | corte&#10;2:00 | forma 2 | fundido 4"></textarea>
-      <div class="hint" id="sceneFb" style="margin-top:6px"></div>
-      <div class="hint">El estilo de arriba es el del principio. <b>Estilo</b>: escribe su nombre o parte de él (<code>nebulosa</code>, <code>portal</code>, <code>espejo</code>, <code>op-art</code>, <code>gyroid</code>, <code>tunel</code>…). <b>forma N</b>: cambia la forma dentro del estilo (giro, simetría, estructura; 0 = la inicial). Puedes juntar ambos: <code>1:20 | portal forma 3 | fundido 2</code>. Los cambios se aplican al momento. Si hay líneas de forma, mandan sobre la casilla “Escenas”.</div>
-    </div>
-
-    <div class="btns">
+    <div class="transport">
       <button id="play">▶ Previsualizar</button>
-      <button id="record" class="primary">⏺ Grabar y descargar (1080p)</button>
+      <button id="record" class="primary">⏺ Grabar (1080p)</button>
       <button id="stop" class="danger" disabled>⏹ Parar</button>
+      <div class="status" id="status">Listo. Carga una canción para empezar.</div>
     </div>
-    <div class="status" id="status">Listo. Carga una canción para empezar.</div>
+  </div>
+
+  <div class="right">
+    <details class="sec" open><summary>1 · Básico</summary><div class="body">
+      <div class="grid2">
+        <div class="full">
+          <label>Canción (WAV o MP3)</label>
+          <input type="file" id="audio" accept="audio/*">
+        </div>
+        <div class="full">
+          <label>Estilo (el del principio)</label>
+          <select id="style">
+            <optgroup label="Experimentales">
+            <option value="opart">Op-Art hipnótico</option>
+            <option value="kali">Portal fractal</option>
+            <option value="gyroid">Gyroid infinito</option>
+            <option value="mirror">Espejo infinito (eco)</option>
+            <option value="paint">Pintura de la música (eco)</option>
+            <option value="glitch">Glitch / datamosh (eco)</option>
+            </optgroup>
+            <optgroup label="Clásicos">
+            <option value="tunnel">Túnel retro</option>
+            <option value="kaleido">Caleidoscopio</option>
+            <option value="synth">Synthwave</option>
+            <option value="particles">Partículas</option>
+            <option value="image">Imagen</option>
+            <option value="nebula">Nebulosa (galaxia)</option>
+            <option value="ridges">Montañas de espectro 3D</option>
+            <option value="blob">Metal líquido 3D</option>
+            <option value="flight">Vuelo nocturno 3D</option>
+            <option value="fractal">Túnel fractal 3D</option>
+            <option value="ink">Tinta líquida</option>
+            <option value="aurora">Aurora boreal</option>
+            </optgroup>
+          </select>
+        </div>
+        <div>
+          <label>Color A · Color B</label>
+          <div style="display:flex;gap:8px"><input type="color" id="colA" value="#4aa8e0"><input type="color" id="colB" value="#d2b482"></div>
+        </div>
+        <div>
+          <label>Intensidad: <b id="intV">1.0</b></label>
+          <input type="range" id="intensity" min="0.4" max="2" step="0.05" value="1">
+        </div>
+        <div class="full">
+          <label>Imagen (solo estilo “Imagen”)</label>
+          <input type="file" id="image" accept="image/*">
+        </div>
+        <div class="full">
+          <label class="chk"><input type="checkbox" id="liveCol" checked> Colores vivos (respiran con la música)</label>
+          <label class="chk"><input type="checkbox" id="secMorph"> Cambiar de forma sola en cada sección</label>
+        </div>
+      </div>
+    </div></details>
+
+    <details class="sec" open><summary>2 · Escenas en el tiempo</summary><div class="body">
+      <div class="row"><select id="sceneWhat"><option value="__forma">Siguiente forma (mismo estilo)</option></select><button id="markScene">⏱ Apuntar aquí</button></div>
+      <textarea id="sceneCues" placeholder="Vacío = el mismo estilo toda la canción&#10;0:45 | nebulosa | fundido 3&#10;1:20 | espejo | corte&#10;2:00 | forma 2 | fundido 4"></textarea>
+      <div class="hint" id="sceneFb"></div>
+      <details class="help"><summary>ⓘ Cómo se escribe</summary><div class="hint">Elige en el desplegable qué quieres que pase y pulsa <b>Apuntar aquí</b> en el momento justo (o escribe la línea a mano). <b>Estilo</b>: su nombre o parte (<code>nebulosa</code>, <code>portal</code>, <code>espejo</code>, <code>op-art</code>, <code>tunel</code>…). <b>forma N</b>: otra forma del mismo estilo (0 = la inicial). Juntos: <code>1:20 | portal forma 3 | fundido 2</code>. <b>corte</b> = 0,4 s; <b>fundido N</b> = N segundos. Las líneas de forma mandan sobre la casilla “Cambiar de forma sola”.</div></details>
+    </div></details>
+
+    <details class="sec" open><summary>3 · Colores en el tiempo</summary><div class="body">
+      <div class="row"><button id="genCols">🎨 Generar desde la canción</button></div>
+      <textarea id="colCues" placeholder="Vacío = Color A/B&#10;0:00 | noche | corte&#10;0:32 | neon | fundido 2&#10;1:04 | #ff3b00 #ffd36b | fundido 4"></textarea>
+      <div class="hint" id="colFb"></div>
+      <details class="help"><summary>ⓘ Paletas y atajos</summary><div class="hint">Paletas: <code>noche</code> <code>fuego</code> <code>neon</code> <code>acido</code> <code>hielo</code> <code>sangre</code> <code>oro</code> <code>vapor</code> <code>toxico</code> <code>ocaso</code> <code>oceano</code> <code>violeta</code> <code>mono</code> <code>selva</code>, o dos colores <code>#rrggbb #rrggbb</code>. <b>corte</b> = 0,4 s; <b>fundido N</b> = N segundos.<br>⏱ Clic en el reloj del vídeo = apunta ese momento aquí.<br>⌨️ Mientras suena: <code>1</code>…<code>0</code> cambian de paleta (Mayús = corte) y se apuntan solos: <code>1</code> noche · <code>2</code> fuego · <code>3</code> neon · <code>4</code> acido · <code>5</code> hielo · <code>6</code> sangre · <code>7</code> oro · <code>8</code> vapor · <code>9</code> toxico · <code>0</code> violeta</div></details>
+    </div></details>
+
+    <details class="sec"><summary>4 · Palabras temporizadas</summary><div class="body">
+      <textarea id="cues" placeholder="Vacío = sin palabras&#10;1:54 | hola | centro"></textarea>
+      <div class="hint">Una por línea: <code>min:seg | palabra | posición</code> (<code>centro</code>, <code>arriba</code>, <code>abajo</code>). Entra difuminada en 0,5 s y se va sola.</div>
+    </div></details>
+
     <div id="saveZone"><div class="hint" id="saveMsg"></div><video id="saveVid" controls></video></div>
-    <details><summary>Notas / problemas</summary>
-      <div class="hint">• Graba en <code>.webm</code> (YouTube lo acepta). Si el navegador no te deja guardar, aparece el vídeo abajo: clic derecho → “Guardar vídeo como…”.<br>• Si algo no carga o ves error en rojo, cópiamelo y lo arreglo.</div>
-    </details>
+    <details class="sec"><summary>ⓘ Notas / problemas</summary><div class="body"><div class="hint">• Graba en <code>.webm</code> (YouTube lo acepta). Si no se descarga solo, aparece el vídeo aquí: clic derecho → “Guardar vídeo como…”.<br>• ← → saltan 5 s. Las marcas sobre la barra son tus cambios (turquesa = color, dorado = escena).<br>• Si algo falla o ves error en rojo, cópiamelo.</div></div></details>
   </div>
 </div>
 
@@ -183,10 +207,10 @@ void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));vUv=p;gl
 const HEAD=`#version 300 es
 precision highp float;
 uniform vec2 uRes;uniform float uTime,uBass,uMid,uHigh,uLevel,uFlash,uIntensity,uSpecN;
-uniform sampler2D uSpec;uniform vec3 uColA,uColB;uniform float uFlow,uFlowE,uDt,uBeat;uniform vec2 uTS;
+uniform sampler2D uSpec;uniform vec3 uColA,uColB;uniform float uFlow,uFlowE,uDt,uBeat,uSeed;uniform vec2 uTS;
 out vec4 o;
 float hash(vec2 p){return fract(sin(dot(p,vec2(27.17,61.31)))*43758.5453);}
-float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+float noise(vec2 p){p+=uSeed*vec2(7.31,3.17);vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
  float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));
  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}
 float fbm(vec2 p){float v=0.0,a=0.5;for(int i=0;i<5;i++){v+=a*noise(p);p=p*2.03+1.7;a*=0.5;}return v;}
@@ -240,7 +264,7 @@ const FS_SYNTH=HEAD+`void main(){
  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;vec3 col;
  if(uv.y>0.0){
    col=mix(uColA*0.55,uColB*0.30,clamp(uv.y*1.3,0.0,1.0));
-   vec2 s=uv-vec2(0.0,0.22);float sr=0.32+0.04*uBass*uIntensity;float d=length(s);
+   vec2 s=uv-vec2(0.3*sin(uSeed*1.7),0.22-0.06*(1.0-cos(uSeed*1.3)));float sr=0.32+0.04*uBass*uIntensity;float d=length(s);
    float sun=smoothstep(sr,sr-0.012,d);
    float sl=step(0.0,sin(uv.y*140.0))*step(s.y,0.0);
    sun*=(1.0-sl*0.75);
@@ -248,7 +272,7 @@ const FS_SYNTH=HEAD+`void main(){
    col=mix(col,sunc,sun);
    col+=(1.0-smoothstep(sr,sr+0.18,d))*0.28*uColB;
  } else {
-   float yy=max(-uv.y,0.0001);float persp=1.0/yy;
+   float yy=max(-uv.y,0.0001);uv.x+=0.25*sin(uSeed*0.9);float persp=1.0/yy;
    float scroll=uFlow;
    vec2 G=vec2(uv.x*persp*0.5,persp*0.5-scroll);vec2 fw=fwidth(G)*1.3+0.025;
    vec2 gl2=smoothstep(0.5-fw,vec2(0.5),abs(fract(G)-0.5));
@@ -260,7 +284,7 @@ const FS_SYNTH=HEAD+`void main(){
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
 const FS_PARTICLES=HEAD+`void main(){
- vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float r=length(uv)+1e-3;float a=atan(uv.y,uv.x);
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float r=length(uv)+1e-3;float a=atan(uv.y,uv.x)+uSeed*0.7;
  vec3 col=vec3(0.0);float sp3=1.0+uBass*3.0*uIntensity;
  for(int i=0;i<3;i++){float fi=float(i);float rr=r*(1.0+fi*0.5);
    float flow=fract(rr*5.0-uFlow*1.2+fi*0.33);
@@ -277,7 +301,8 @@ void main(){
  if(uHasImg<0.5){ o=vec4(palette(0.3+0.4*uLevel),1.0); return; }
  vec2 uv=gl_FragCoord.xy/uRes;
  vec2 c=uv-0.5;
- float zoom=1.0-0.06*uBass*uIntensity-0.02*uLevel+0.03*uFlash;
+ float zoom=(1.0-0.12*(1.0-cos(uSeed*0.9)))*(1.0-0.06*uBass*uIntensity-0.02*uLevel)+0.03*uFlash;
+ c+=vec2(sin(uSeed*1.3),cos(uSeed*0.8)-1.0)*0.05*(1.0-zoom)*6.0;
  c*=zoom;
  float r=length(c);
  c+=normalize(c+1e-4)*sin(r*30.0-uTime*3.0)*0.012*uBass*uIntensity;
@@ -375,7 +400,7 @@ const FS_BLOB=HEAD+`uniform float uKickAge;
 float smin(float a,float b,float k){float h=clamp(0.5+0.5*(b-a)/k,0.0,1.0);return mix(b,a,h)-k*h*(1.0-h);}
 float map(vec3 p){float t=uTime,I=uIntensity;float d=1e5;
  for(int i=0;i<5;i++){float fi=float(i);
-  vec3 c=vec3(sin(t*0.37*(1.0+fi*0.13)+fi*1.7)*1.1,cos(t*0.29*(1.0+fi*0.11)+fi*2.3)*0.7,sin(t*0.23*(1.0+fi*0.07)+fi*0.9)*0.8);
+  vec3 c=vec3(sin(t*0.37*(1.0+fi*0.13)+fi*1.7+uSeed*1.3)*1.1,cos(t*0.29*(1.0+fi*0.11)+fi*2.3+uSeed*0.9)*0.7,sin(t*0.23*(1.0+fi*0.07)+fi*0.9)*0.8);
   float r=0.42+0.08*sin(fi*3.0+t*0.7)+(i==0?0.35:0.12)*uBass*I;
   d=smin(d,length(p-c)-r,0.55);}
  d+=0.035*sin(p.x*7.0+t*1.7)*sin(p.y*7.0-t*1.3)*sin(p.z*7.0+t)*(0.4+2.0*uMid*I);
@@ -452,7 +477,7 @@ const FS_FRACTAL=HEAD+`uniform float uKickAge;
 float map(vec3 p){float t=uTime,I=uIntensity;
  p.xy*=rot(p.z*0.12+t*0.03);
  vec3 q=p;q.z=mod(q.z+2.0,4.0)-2.0;
- for(int i=0;i<4;i++){q=abs(q)-vec3(1.0,0.8,0.7);q.xy*=rot(0.62+0.12*sin(t*0.07+float(i)));q.yz*=rot(0.41+0.08*cos(t*0.05));}
+ for(int i=0;i<4;i++){q=abs(q)-vec3(1.0,0.8,0.7)-0.15*vec3(sin(uSeed),sin(uSeed*1.3),cos(uSeed*0.7));q.xy*=rot(0.62+0.12*sin(t*0.07+float(i))+0.25*sin(uSeed*1.1));q.yz*=rot(0.41+0.08*cos(t*0.05));}
  float th=0.03+0.05*uBass*I;
  float d=length(max(abs(q)-vec3(th,th,0.9),0.0))-0.008;
  return max(d,0.6-length(p.xy));}
@@ -537,7 +562,7 @@ void main(){
  col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
-const FS_OPART=HEAD+`uniform float uKickAge,uSeed,uSecT,uEnergy;
+const FS_OPART=HEAD+`uniform float uKickAge,uSecT,uEnergy;
 void main(){
  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;float sd=uSeed*7.31;
  float r=length(uv);float a=atan(uv.y,uv.x);
@@ -563,7 +588,7 @@ void main(){
  col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
-const FS_KALI=HEAD+`uniform float uKickAge,uSeed,uSecT,uEnergy;
+const FS_KALI=HEAD+`uniform float uKickAge,uSecT,uEnergy;
 void main(){
  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;
  float bp=pow(0.5+0.5*cos(6.2831853*fract(uBeat)),4.0);
@@ -596,7 +621,7 @@ void main(){
  col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
-const FS_GYROID=HEAD+`uniform float uKickAge,uSeed,uSecT,uEnergy;
+const FS_GYROID=HEAD+`uniform float uKickAge,uSecT,uEnergy;
 float map(vec3 p){float t=uTime,I=uIntensity;
  p.xy*=rot(p.z*0.12*sin(uSeed*1.3+0.5)+t*0.04);
  float sc=1.5+0.35*sin(uSeed*1.7);
@@ -625,7 +650,7 @@ void main(){
  col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
-const FS_MIRROR=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSeed,uSecT,uEnergy;
+const FS_MIRROR=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSecT,uEnergy;
 void main(){
  float A=uRes.x/uRes.y;vec2 uv=gl_FragCoord.xy/uRes;vec2 c=(uv-0.5)*vec2(A,1.0);float t=uTime,I=uIntensity;
  float zoom=pow(0.985-0.022*uBass*I-0.012*uEnergy,uDt*60.0);
@@ -651,7 +676,7 @@ void main(){
  vec3 col=max(prev,vec3(0.0))+inj;
  o=vec4(min(col,vec3(1.4)),1.0);}`;
 
-const FS_PAINT=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSeed,uSecT,uEnergy;
+const FS_PAINT=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSecT,uEnergy;
 vec2 flowv(vec2 p,float t){float e=0.02;vec2 o2=vec2(0.0,t*0.05)+uSeed*3.1;
  float n1=fbm(p*1.5+o2),nx=fbm(p*1.5+vec2(e,0.0)+o2),ny=fbm(p*1.5+vec2(0.0,e)+o2);
  return vec2(ny-n1,-(nx-n1))/e;}
@@ -673,7 +698,7 @@ void main(){
  col=mix(col,palette(0.95),smoothstep(0.03+uKickAge*0.3,0.0,kd)*exp(-uKickAge*8.0)*0.7*I);
  o=vec4(min(col,vec3(1.2)),1.0);}`;
 
-const FS_GLITCH=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSeed,uSecT,uEnergy;
+const FS_GLITCH=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSecT,uEnergy;
 void main(){
  vec2 uv=gl_FragCoord.xy/uRes;float t=uTime,I=uIntensity;float A=uRes.x/uRes.y;
  vec2 bs=vec2(48.0,27.0)/(1.0+floor(mod(uSeed,3.0)));
@@ -923,7 +948,7 @@ function renderStyle(key,t,dt,ca,cb,seed,RW,RH,slot){
   return slot?sceneTex2:sceneTex;}
 /* ===== Escenas en el tiempo ===== */
 let sceneCues=[],sceneBad=[],playBaseStyle='opart',curSceneName='';
-function styleOpts(){return [...S('style').options].map(o=>({v:o.value,n:normTxt(o.textContent)}));}
+function styleOpts(){return [...S('style').options].map(o=>({v:o.value,n:normTxt(o.textContent).replace(/[()]/g,'').replace(/\s+/g,' ').trim()}));}
 function findStyle(txt){txt=normTxt(txt).replace(/[()]/g,'').trim();if(!txt)return null;const L=styleOpts();
   return (L.find(o=>o.v===txt)||L.find(o=>o.n===txt)||L.find(o=>o.n.startsWith(txt))||L.find(o=>o.n.includes(txt))||{}).v||null;}
 function styleName(v){const o=[...S('style').options].find(x=>x.value===v);return o?o.textContent:v;}
@@ -1034,9 +1059,17 @@ S('seek').addEventListener('input',()=>{seeking=true;const tm=S('timer');if(tm)t
 S('seek').addEventListener('change',()=>{seeking=false;seekTo(+S('seek').value);});
 document.addEventListener('keydown',e=>{const tg=(e.target.tagName||'').toLowerCase();if(tg==='textarea'||tg==='input'||tg==='select'||!buffer)return;
   if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();seekTo((playing?songT():lastSongT)+(e.key==='ArrowRight'?5:-5));}});
+function fitStage(){const box=S('stageBox'),st=document.querySelector('.stage');if(!box||!st)return;
+  if(innerWidth<=980){st.style.width='';st.style.height='';return;}
+  const W=box.clientWidth,H=box.clientHeight;let w=W,h=W*9/16;if(h>H){h=H;w=H*16/9;}st.style.width=Math.floor(w)+'px';st.style.height=Math.floor(h)+'px';}
+addEventListener('resize',fitStage);fitStage();setTimeout(fitStage,300);
 S('genCols').onclick=()=>{genColorCues();colorCues=parseColorCues();colFeedback();};
 S('sceneCues').addEventListener('input',()=>{sceneCues=parseSceneCues();sceneFeedback();});
-S('markScene').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('sceneCues');ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+fmtT(tt)+' | forma 1 | fundido 2';sceneCues=parseSceneCues();sceneFeedback();setStatus('Apuntado '+fmtT(tt)+' en Escenas en el tiempo.');};
+S('markScene').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('sceneCues');const what=S('sceneWhat').value;let line;
+  if(what==='__forma'){const cur=parseSceneCues();const mx=cur.reduce((m,c)=>c.seed!==null?Math.max(m,c.seed):m,0);line=fmtT(tt)+' | forma '+(Math.floor(mx)+1)+' | fundido 2';}
+  else line=fmtT(tt)+' | '+styleName(what).replace(/[()]/g,'').replace(/\s+/g,' ').trim()+' | fundido 2';
+  ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+line;sceneCues=parseSceneCues();sceneFeedback();setStatus('Apuntado: '+line);};
+{const sw=S('sceneWhat');[...S('style').options].forEach(o=>{const n=document.createElement('option');n.value=o.value;n.textContent='→ '+o.textContent;sw.appendChild(n);});}
 S('colCues').addEventListener('input',()=>{colorCues=parseColorCues();colFeedback();});
 S('cues').addEventListener('input',()=>{cues=parseCues();activeCueId=-1;});
 S('timer').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('colCues');
