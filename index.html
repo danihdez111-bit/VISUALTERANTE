@@ -46,7 +46,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.6 · 13 estilos</small></h1>
+  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.7 · 16 estilos</small></h1>
   <p class="sub">Elige estilo, carga una canción, pon las palabras con su tiempo y graba. Render por GPU en tu navegador.</p>
 
   <div class="stage">
@@ -60,6 +60,12 @@
       <div>
         <label>Estilo</label>
         <select id="style">
+          <optgroup label="Experimentales">
+          <option value="opart">Op-Art hipnótico</option>
+          <option value="kali">Portal fractal</option>
+          <option value="gyroid">Gyroid infinito</option>
+          </optgroup>
+          <optgroup label="Clásicos">
           <option value="tunnel">Túnel retro</option>
           <option value="kaleido">Caleidoscopio</option>
           <option value="synth">Synthwave</option>
@@ -73,6 +79,7 @@
           <option value="fractal">Túnel fractal 3D</option>
           <option value="ink">Tinta líquida</option>
           <option value="aurora">Aurora boreal</option>
+          </optgroup>
         </select>
       </div>
       <div>
@@ -123,6 +130,14 @@
       <div class="hint">Pulsa <b>Marcar recorrido</b> y haz clic sobre la imagen. El patronus recorre los puntos en orden durante toda la canción (más despacio a lo lejos). Con la Imagen 3 se mete <i>dentro</i> del laberinto: los setos de delante lo tapan. Copia este texto si quieres guardar el recorrido.</div>
     </div>
 
+    <div style="margin-top:12px">
+      <label>4 · Colores en el tiempo — una línea por cambio: <code>min:seg | paleta | corte</code> o <code>| fundido 3</code></label>
+      <div class="btns" style="margin-top:4px"><button id="genCols">🎨 Generar desde la canción</button>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:12.5px;color:var(--txt)"><input type="checkbox" id="liveCol" checked style="width:auto"> Colores vivos (respiran con la música)</label></div>
+      <textarea id="colCues" style="min-height:70px;margin-top:8px" placeholder="0:00 | noche | corte&#10;0:32 | neon | corte&#10;1:04 | #ff3b00 #ffd36b | fundido 4"></textarea>
+      <div class="hint">Paletas: <code>noche</code> <code>fuego</code> <code>neon</code> <code>acido</code> <code>hielo</code> <code>sangre</code> <code>oro</code> <code>vapor</code> <code>toxico</code> <code>ocaso</code> <code>oceano</code> <code>violeta</code> <code>mono</code> <code>selva</code>, o dos colores <code>#rrggbb #rrggbb</code>. <b>corte</b> = cambio brusco; <b>fundido N</b> = transición de N segundos. Sin líneas se usan Color A/B. El botón detecta las secciones y drops de la canción y te lo rellena.</div>
+    </div>
+
     <div class="btns">
       <button id="play">▶ Previsualizar</button>
       <button id="record" class="primary">⏺ Grabar y descargar (1080p)</button>
@@ -147,7 +162,7 @@ let imgTex, imgAspect=1, hasImg=false;
 let fgTex, fgAspect=1, hasFg=false;
 const NB=72, specData=new Uint8Array(NB);
 let histTex,histRow=0,histLast=0;
-const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uFg','uFgAspect','uHasFg','uPos','uFacing','uScale','uKickAge','uTrail','uDepth','uTilt','uPD','uFgBot','uHasDep','uDep','uHist','uHistRow'];
+const UNAMES=['uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uFg','uFgAspect','uHasFg','uPos','uFacing','uScale','uKickAge','uTrail','uDepth','uTilt','uPD','uFgBot','uHasDep','uDep','uHist','uHistRow','uSeed','uSecT','uEnergy'];
 
 function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
   if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
@@ -627,6 +642,92 @@ void main(){
  col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
+const FS_OPART=HEAD+`uniform float uKickAge,uSeed,uSecT,uEnergy;
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;float sd=uSeed*7.31;
+ float r=length(uv);float a=atan(uv.y,uv.x);
+ vec2 c1=0.35*vec2(sin(t*0.13+sd),cos(t*0.11+sd*0.7));
+ vec2 c2=0.35*vec2(sin(t*0.09+2.0+sd*1.3),cos(t*0.15+1.0));
+ vec2 c3=0.25*vec2(cos(t*0.07+sd),sin(t*0.05+3.0));
+ float freq=26.0+10.0*sin(sd)+uBass*16.0*I;
+ float f1=sin(length(uv-c1)*freq-t*3.0*(0.7+uEnergy));
+ float f2=sin(length(uv-c2)*freq*1.07+t*2.3);
+ float arms=6.0+2.0*floor(mod(uSeed,4.0));
+ float sp=sin(a*arms+log(r+1e-3)*(10.0+uMid*10.0*I)-t*2.0);
+ float f3=sin(dot(uv-c3,vec2(cos(t*0.1+sd),sin(t*0.1+sd)))*freq*0.8);
+ float m=f1*f2;m=mix(m,m*sp,0.5+0.5*sin(t*0.05+sd));m+=0.35*f3*sp;
+ float aa=fwidth(m)*1.2+0.01;float bw=smoothstep(-aa,aa,m);
+ float inv=(1.0-smoothstep(0.0,0.12,uKickAge))*0.75*I;bw=mix(bw,1.0-bw,clamp(inv,0.0,1.0));
+ vec3 hi=palette(0.6+0.4*sin(r*6.0-t+sd));
+ vec3 col=mix(uColA*0.04,hi,bw);
+ float sh=0.004*uHigh*I;
+ col.r=mix(col.r,col.r*(1.0+smoothstep(-aa,aa,sin(length(uv+vec2(sh,0.0)-c1)*freq-t*3.0*(0.7+uEnergy))*f2)),0.3);
+ col+=palette(0.95)*exp(-pow((r-uKickAge*0.9)*9.0,2.0))*exp(-uKickAge*2.8)*0.4*I;
+ col*=1.0-0.35*pow(r*0.9,2.2);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
+ o=vec4(clamp(col,0.0,1.0),1.0);}`;
+
+const FS_KALI=HEAD+`uniform float uKickAge,uSeed,uSecT,uEnergy;
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;
+ uv*=1.0-0.08*uFlash*I;
+ vec3 dir=normalize(vec3(uv*0.8,1.0));
+ float a1=0.3*sin(t*0.03)+uSeed*0.9,a2=0.2+t*0.02;
+ dir.xz*=rot(a1);dir.xy*=rot(a2);
+ vec3 from=vec3(1.0+uSeed*0.37,0.5,0.5)+vec3(t*0.02,t*0.015,-2.0+t*0.06);
+ from.xz*=rot(a1);from.xy*=rot(a2);
+ float fp=0.53+0.015*sin(uSeed*2.1)+0.025*uBass*I;
+ float s=0.1,fade=1.0;vec3 v=vec3(0.0);
+ for(int r=0;r<14;r++){
+  vec3 p=from+s*dir*0.5;
+  p=abs(vec3(0.85)-mod(p,vec3(1.7)));
+  float pa=0.0,a=0.0;
+  for(int i=0;i<15;i++){p=abs(p)/dot(p,p)-fp;a+=abs(length(p)-pa);pa=length(p);}
+  float dm=max(0.0,0.3-a*a*0.001);a*=a*a;
+  if(r>6)fade*=1.0-dm;
+  v+=fade;
+  v+=vec3(s,s*s,s*s*s*s)*a*0.0015*fade;
+  fade*=0.73;s+=0.1;}
+ v=mix(vec3(length(v)),v,0.85)*0.01;
+ float l=dot(v,vec3(0.333));
+ vec3 col=palette(clamp(l*1.1,0.0,1.0))*l*2.2+v*0.25;
+ col*=0.6+0.9*uLevel+0.9*uFlash*I;
+ float rr=length(uv);
+ col+=palette(0.95)*exp(-pow((rr-uKickAge*0.9)*9.0,2.0))*exp(-uKickAge*2.8)*0.35*I;
+ col*=1.0-0.4*pow(rr*0.9,2.2);
+ col=1.0-exp(-col*1.2);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
+ o=vec4(clamp(col,0.0,1.0),1.0);}`;
+
+const FS_GYROID=HEAD+`uniform float uKickAge,uSeed,uSecT,uEnergy;
+float map(vec3 p){float t=uTime,I=uIntensity;
+ p.xy*=rot(p.z*0.12*sin(uSeed*1.3+0.5)+t*0.04);
+ float sc=1.5+0.35*sin(uSeed*1.7);
+ vec3 q=p*sc;float g=abs(dot(sin(q),cos(q.zxy)))/sc;
+ vec3 q2=p*sc*3.1+t*0.2;float g2=abs(dot(sin(q2),cos(q2.zxy)))/(sc*3.1);
+ float d=g-0.04-0.06*uBass*I+g2*0.3;
+ return max(d,0.5-length(p.xy));}
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;
+ vec3 ro=vec3(0.0,0.0,t*1.8);
+ vec3 rd=normalize(vec3(uv*rot(t*0.03+0.3*sin(t*0.07)),1.1-0.15*uFlash*I));
+ float tt=0.0;vec3 acc=vec3(0.0);
+ for(int i=0;i<70;i++){vec3 p=ro+rd*tt;float d=map(p);
+  float h=fract(p.z*0.035+uSeed*0.13+0.15*sin(atan(p.y,p.x)*3.0));
+  vec3 c=palette(0.35+0.6*h);
+  acc+=c*exp(-max(d,0.0)*25.0)*0.022*exp(-tt*0.07);
+  if(d<0.002){acc+=c*0.35*exp(-tt*0.07);break;}
+  tt+=max(d*0.7,0.015);if(tt>28.0)break;}
+ vec3 col=acc*(0.6+1.0*uLevel+1.5*uFlash*I);
+ float r=length(uv);
+ col+=palette(0.9)*exp(-r*5.0)*(0.05+0.6*uBass*I);
+ col+=palette(0.95)*exp(-pow((r-uKickAge*0.9)*9.0,2.0))*exp(-uKickAge*2.8)*0.35*I;
+ vec2 g=gl_FragCoord.xy/5.0;col+=palette(0.95)*step(0.994,hash(floor(g)+floor(t*15.0)))*uHigh*1.5*I*smoothstep(0.15,0.6,r);
+ col*=1.0-0.45*pow(r*0.9,2.2);
+ col=1.0-exp(-col*1.3);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
+ o=vec4(clamp(col,0.0,1.0),1.0);}`;
+
 const FS_TEXT=`#version 300 es
 precision highp float;uniform sampler2D uTex;uniform float uAlpha;in vec2 vUv;out vec4 o;
 void main(){vec4 t=texture(uTex,vUv);o=vec4(t.rgb,t.a*uAlpha);}`;
@@ -636,7 +737,7 @@ function makeScene(fs){const prog=program(VS,fs);const loc={};for(const n of UNA
 function initGL(){
   const c=S('gl');gl=c.getContext('webgl2',{preserveDrawingBuffer:true,alpha:false});
   if(!gl)throw new Error('Tu navegador no soporta WebGL2.');
-  const defs={tunnel:FS_TUNNEL,kaleido:FS_KALEIDO,synth:FS_SYNTH,particles:FS_PARTICLES,image:FS_IMAGE,patronus:FS_PATRONUS,nebula:FS_NEBULA,ridges:FS_RIDGES,blob:FS_BLOB,flight:FS_FLIGHT,fractal:FS_FRACTAL,ink:FS_INK,aurora:FS_AURORA};
+  const defs={tunnel:FS_TUNNEL,kaleido:FS_KALEIDO,synth:FS_SYNTH,particles:FS_PARTICLES,image:FS_IMAGE,patronus:FS_PATRONUS,nebula:FS_NEBULA,ridges:FS_RIDGES,blob:FS_BLOB,flight:FS_FLIGHT,fractal:FS_FRACTAL,ink:FS_INK,aurora:FS_AURORA,opart:FS_OPART,kali:FS_KALI,gyroid:FS_GYROID};
   const failed=[];
   for(const k in defs){try{scenes[k]=makeScene(defs[k]);}catch(e){failed.push(k+': '+e.message);
     const opt=[...S('style').options].find(o=>o.value===k);if(opt)opt.remove();}}
@@ -722,9 +823,52 @@ function patPath(t){
   const step=Math.abs(Math.sin(t*3.2));
   const y=-0.24+(1-z)*0.30+0.010*step*(0.5+0.5*z);
   return {x,y,z};}
+/* ===== Motor de color + analisis de la cancion ===== */
+const PRESETS={noche:['#0b1d3a','#dff1ff'],fuego:['#ff3b00','#ffd36b'],neon:['#ff00c8','#00f0ff'],acido:['#39ff14','#f7ff00'],hielo:['#0077ff','#e8fbff'],sangre:['#5a0000','#ff3030'],oro:['#6b3f00','#ffd700'],vapor:['#ff71ce','#01cdfe'],toxico:['#00ff9f','#b967ff'],ocaso:['#ff6a00','#ee0979'],oceano:['#003973','#00e5ff'],violeta:['#3a0ca3','#f72585'],mono:['#1a1a1a','#ffffff'],selva:['#0b3d0b','#9dff57']};
+let songMap=null,colorCues=[],centSm=0.35;
+function mixRGB(a,b,k){return [a[0]+(b[0]-a[0])*k,a[1]+(b[1]-a[1])*k,a[2]+(b[2]-a[2])*k];}
+function cl01(x){return Math.max(0,Math.min(1,x));}
+function hueRot(c,deg){const a=deg*Math.PI/180,cs=Math.cos(a),sn=Math.sin(a);
+  const m=[.213+cs*.787-sn*.213,.715-cs*.715-sn*.715,.072-cs*.072+sn*.928,.213-cs*.213+sn*.143,.715+cs*.285+sn*.140,.072-cs*.072-sn*.283,.213-cs*.213-sn*.787,.715-cs*.715+sn*.715,.072+cs*.928+sn*.072];
+  return [cl01(m[0]*c[0]+m[1]*c[1]+m[2]*c[2]),cl01(m[3]*c[0]+m[4]*c[1]+m[5]*c[2]),cl01(m[6]*c[0]+m[7]*c[1]+m[8]*c[2])];}
+function fmtT(s){const m=Math.floor(s/60),r=s-m*60;return m+':'+(r<10?'0':'')+r.toFixed(1).replace(/\.0$/,'');}
+/* analiza la cancion entera: energia, graves y secciones (cambios fuertes = drops) */
+function analyzeSong(buf){
+  const sr=buf.sampleRate,d0=buf.getChannelData(0),d1=buf.numberOfChannels>1?buf.getChannelData(1):d0;
+  const hop=Math.floor(sr*0.1),N=Math.floor(buf.length/hop),e=new Float32Array(N),lo=new Float32Array(N);
+  let lp=0;const a=Math.exp(-2*Math.PI*150/(sr/2));
+  for(let i=0;i<N;i++){let s=0,sl=0,c=0;for(let j=i*hop;j<(i+1)*hop;j+=2){const v=(d0[j]+d1[j])*0.5;lp=a*lp+(1-a)*v;s+=v*v;sl+=lp*lp;c++;}e[i]=Math.sqrt(s/c);lo[i]=Math.sqrt(sl/c);}
+  const srt=[...e].sort((x,y)=>x-y),p95=srt[Math.floor(N*0.95)]||1;for(let i=0;i<N;i++)e[i]=Math.min(1.2,e[i]/p95);
+  const W=40,nov=new Float32Array(N),mean=(arr,x,y)=>{let s=0;for(let k=x;k<y;k++)s+=arr[k];return s/Math.max(1,y-x);};
+  for(let i=W;i<N-W;i++){const b=mean(e,i-W,i),f=mean(e,i,i+W),bl=mean(lo,i-W,i),fl=mean(lo,i,i+W);
+    nov[i]=Math.abs(Math.log((f+1e-3)/(b+1e-3)))+0.5*Math.abs(Math.log((fl+1e-4)/(bl+1e-4)));}
+  const secs=[{t:0,drop:false}];
+  for(let i=W;i<N-W;i++){if(nov[i]<0.35)continue;let mx=true;for(let k=Math.max(0,i-40);k<Math.min(N,i+40);k++)if(nov[k]>nov[i]){mx=false;break;}
+    if(!mx||i*0.1-secs[secs.length-1].t<8)continue;const b=mean(e,i-W,i),f=mean(e,i,i+W);secs.push({t:i*0.1,drop:f/(b+1e-3)>1.6&&f>0.3});}
+  const sm=new Float32Array(N);for(let i=0;i<N;i++)sm[i]=mean(e,Math.max(0,i-10),Math.min(N,i+10));
+  return {energy:sm,sections:secs};}
+function secAt(t){if(!songMap||!playing)return {i:0,t0:0};const S2=songMap.sections;let i=0;while(i+1<S2.length&&S2[i+1].t<=t)i++;return {i,t0:S2[i].t};}
+function energyAt(t){if(!songMap||!playing)return 0.5;const k=Math.max(0,Math.min(songMap.energy.length-1,Math.floor(t/0.1)));return songMap.energy[k];}
+function parseCol(tok){tok=(tok||'').trim().toLowerCase();if(PRESETS[tok])return PRESETS[tok].map(hexToRGB);
+  const hx=tok.match(/#[0-9a-f]{6}/g);if(hx&&hx.length>=2)return [hexToRGB(hx[0]),hexToRGB(hx[1])];if(hx&&hx.length===1)return [hexToRGB(hx[0]),[1,1,1]];return null;}
+function parseColorCues(){const out=[];for(const raw of S('colCues').value.split('\n')){const p=raw.split('|').map(x=>x.trim());if(p.length<2)continue;
+  const t=parseTime(p[0]),c=parseCol(p[1]);if(isNaN(t)||!c)continue;let dur=1.5;const tr=(p[2]||'').toLowerCase();
+  if(tr.startsWith('corte'))dur=0;else{const n=parseFloat(tr.replace(/[^0-9.]/g,''));if(!isNaN(n))dur=n;}
+  out.push({t0:t,A:c[0],B:c[1],dur});}return out.sort((x,y)=>x.t0-y.t0);}
+function currentColors(t){let A=hexToRGB(S('colA').value),B=hexToRGB(S('colB').value);
+  if(playing&&colorCues.length){for(const c of colorCues){if(c.t0>t)break;const k=c.dur>0?Math.min(1,(t-c.t0)/c.dur):1;A=mixRGB(A,c.A,k);B=mixRGB(B,c.B,k);}}
+  if(playing&&S('liveCol').checked){const h=(centSm-0.3)*160;A=hueRot(A,h);B=hueRot(B,h*0.6);const f=1+flash*0.35;B=B.map(x=>cl01(x*f));}
+  return [A,B];}
+function genColorCues(){if(!songMap){setStatus('Primero carga una canción.');return;}
+  const names=Object.keys(PRESETS);let seed=Math.floor(songMap.energy.length*7.7)%9973;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
+  for(let i=names.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[names[i],names[j]]=[names[j],names[i]];}
+  S('colCues').value=songMap.sections.map((s,i)=>fmtT(s.t)+' | '+names[i%names.length]+' | '+(i===0||s.drop?'corte':'fundido 2')).join('\n');
+  setStatus('Colores generados: '+songMap.sections.length+' secciones ('+songMap.sections.filter(s=>s.drop).length+' cambios bruscos). Edítalos a tu gusto.');}
+
 async function loadAudio(file){if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();
   const ab=await file.arrayBuffer();buffer=await actx.decodeAudioData(ab);
-  setStatus('Canción cargada ('+buffer.duration.toFixed(1)+'s). Previsualiza o graba.');}
+  try{songMap=analyzeSong(buffer);}catch(e){songMap=null;}
+  setStatus('Canción cargada ('+fmtT(buffer.duration)+'). '+(songMap?songMap.sections.length+' secciones detectadas ('+songMap.sections.filter(x=>x.drop).length+' drops). ':'')+'Previsualiza o graba.');}
 function buildGraph(){srcNode=actx.createBufferSource();srcNode.buffer=buffer;
   analyser=actx.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=0.6;
   freqBuf=new Uint8Array(analyser.frequencyBinCount);msDest=actx.createMediaStreamDestination();
@@ -740,6 +884,7 @@ function readAudio(){
   analyser.getByteFrequencyData(freqBuf);const n=freqBuf.length;
   const avg=(lo,hi)=>{let s=0,c=0;for(let i=lo;i<hi&&i<n;i++){s+=freqBuf[i];c++;}return c?s/c/255:0;};
   lastBass=avg(1,8);lastMid=avg(8,60);lastHigh=avg(60,260);lastLevel=avg(1,260);
+  {let sw=0,ss=0;for(let i=1;i<300&&i<n;i++){sw+=freqBuf[i]*i;ss+=freqBuf[i];}const cn=ss>0?sw/ss/300:0.3;centSm=centSm*0.97+cn*0.03;}
   bassAvg=bassAvg*0.9+lastBass*0.1;if(lastBass>bassAvg*1.35&&lastBass>0.28){if(flash<0.6)kickT=songT();flash=1.0;}flash*=0.88;
   for(let i=0;i<NB;i++){const f=Math.pow(i/NB,1.7);const idx=Math.min(n-1,2+Math.floor(f*(n*0.5)));specData[i]=freqBuf[idx];}
 }
@@ -763,7 +908,8 @@ function frame(){
     if(L.uFlash)gl.uniform1f(L.uFlash,flash);
     if(L.uIntensity)gl.uniform1f(L.uIntensity,parseFloat(S('intensity').value));
     if(L.uSpecN)gl.uniform1f(L.uSpecN,NB);
-    const ca=hexToRGB(S('colA').value),cb=hexToRGB(S('colB').value);
+    const [ca,cb]=currentColors(t);
+    if(L.uSeed){const sc=secAt(t);gl.uniform1f(L.uSeed,sc.i);if(L.uSecT)gl.uniform1f(L.uSecT,t-sc.t0);if(L.uEnergy)gl.uniform1f(L.uEnergy,energyAt(t));}
     if(L.uColA)gl.uniform3f(L.uColA,ca[0],ca[1],ca[2]);
     if(L.uColB)gl.uniform3f(L.uColB,cb[0],cb[1],cb[2]);
     if(L.uImgAspect)gl.uniform1f(L.uImgAspect,imgAspect);
@@ -853,6 +999,7 @@ S('image3').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Im
     const cx=cv.getContext('2d');cx.drawImage(img,0,0,depW,depH);depCPU=cx.getImageData(0,0,depW,depH).data;
     hasDep=true;buildPath();setStatus(waypoints.length>1?'Profundidad cargada: el patronus ya está dentro del laberinto.':'Profundidad cargada. Ahora pulsa “Marcar recorrido” y haz clic en el suelo de los pasillos.');URL.revokeObjectURL(img.src);};
   img.onerror=()=>showErr('No se pudo cargar la imagen de profundidad.');img.src=URL.createObjectURL(f);};
+S('genCols').onclick=genColorCues;
 S('psize').oninput=e=>S('sizeV').textContent=parseFloat(e.target.value).toFixed(2);
 S('editPath').onclick=()=>{editPath=!editPath;S('editPath').textContent=editPath?'✔ Terminar':'✎ Marcar recorrido';
   if(editPath&&S('style').value!=='patronus'){S('style').value='patronus';applyPreset();}};
@@ -866,9 +1013,9 @@ function applyPreset(){if(S('style').value==='patronus'){S('colA').value='#0b1d3
 S('style').onchange=applyPreset;
 async function ensureCtx(){if(actx&&actx.state==='suspended')await actx.resume();}
 S('play').onclick=async()=>{if(!buffer){setStatus('Primero carga una canción.');return;}
-  await ensureCtx();cues=parseCues();activeCueId=-1;stopAudio();startAudio();S('stop').disabled=false;setStatus('Previsualizando…');};
+  await ensureCtx();cues=parseCues();colorCues=parseColorCues();activeCueId=-1;stopAudio();startAudio();S('stop').disabled=false;setStatus('Previsualizando…');};
 S('record').onclick=async()=>{if(!buffer){setStatus('Primero carga una canción.');return;}
-  await ensureCtx();cues=parseCues();activeCueId=-1;S('saveZone').style.display='none';
+  await ensureCtx();cues=parseCues();colorCues=parseColorCues();activeCueId=-1;S('saveZone').style.display='none';
   stopAudio();startAudio();startRec();S('play').disabled=true;S('record').disabled=true;S('stop').disabled=false;
   setStatus('🔴 Grabando la canción entera… no cambies de pestaña. Parará sola al acabar.');};
 S('stop').onclick=()=>{stopAudio();if(recorder&&recorder.state==='recording')recorder.stop();else resetButtons();setStatus('Parado.');};
