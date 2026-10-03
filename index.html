@@ -18,6 +18,8 @@
   .sub{color:var(--mut);font-size:13px;margin:0 0 14px}
   .stage{position:relative;width:100%;aspect-ratio:16/9;background:#000;border:1px solid var(--line);border-radius:12px;overflow:hidden}
   canvas{width:100%;height:100%;display:block}
+  .timer{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);padding:5px 11px;border-radius:999px;font:600 13px ui-monospace,monospace;color:#fff;cursor:pointer;user-select:none;z-index:2}
+  .timer:hover{background:rgba(31,209,178,.35)}
   .rec{position:absolute;top:10px;left:10px;display:none;align-items:center;gap:7px;background:rgba(0,0,0,.55);padding:5px 10px;border-radius:999px;font-size:12px}
   .dot{width:9px;height:9px;border-radius:50%;background:#ff4d4d;animation:bl 1s infinite}
   @keyframes bl{50%{opacity:.25}}
@@ -46,11 +48,12 @@
 </head>
 <body>
 <div class="wrap">
-  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.11 · 18 estilos <span id="qual"></span></small></h1>
+  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.12 · 18 estilos <span id="qual"></span></small></h1>
   <p class="sub">Elige estilo, carga una canción, pon las palabras con su tiempo y graba. Render por GPU en tu navegador.</p>
 
   <div class="stage">
     <canvas id="gl" width="1920" height="1080"></canvas>
+    <div class="timer" id="timer" title="Clic: apuntar este momento en Colores en el tiempo">0:00.0</div>
     <div class="rec" id="recPill"><span class="dot"></span><span id="recTime">REC 0:00</span></div>
   </div>
 
@@ -116,7 +119,7 @@
       <div class="btns" style="margin-top:4px"><button id="genCols">🎨 Generar desde la canción</button>
         <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:12.5px;color:var(--txt)"><input type="checkbox" id="liveCol" checked style="width:auto"> Colores vivos (respiran con la música)</label></div>
       <textarea id="colCues" style="min-height:70px;margin-top:8px" placeholder="0:00 | noche | corte&#10;0:32 | neon | corte&#10;1:04 | #ff3b00 #ffd36b | fundido 4"></textarea>
-      <div class="hint">Paletas: <code>noche</code> <code>fuego</code> <code>neon</code> <code>acido</code> <code>hielo</code> <code>sangre</code> <code>oro</code> <code>vapor</code> <code>toxico</code> <code>ocaso</code> <code>oceano</code> <code>violeta</code> <code>mono</code> <code>selva</code>, o dos colores <code>#rrggbb #rrggbb</code>. <b>corte</b> = cambio brusco; <b>fundido N</b> = transición de N segundos. Sin líneas se usan Color A/B. El botón detecta las secciones y drops de la canción y te lo rellena.<br>⌨️ <b>En directo:</b> mientras suena, pulsa <code>1</code>…<code>9</code>, <code>0</code> para cambiar de paleta (con <b>Mayús</b> = corte brusco). Cada cambio se apunta aquí para que la próxima grabación lo repita.<br><code>1</code> noche · <code>2</code> fuego · <code>3</code> neon · <code>4</code> acido · <code>5</code> hielo · <code>6</code> sangre · <code>7</code> oro · <code>8</code> vapor · <code>9</code> toxico · <code>0</code> violeta</div>
+      <div class="hint">Paletas: <code>noche</code> <code>fuego</code> <code>neon</code> <code>acido</code> <code>hielo</code> <code>sangre</code> <code>oro</code> <code>vapor</code> <code>toxico</code> <code>ocaso</code> <code>oceano</code> <code>violeta</code> <code>mono</code> <code>selva</code>, o dos colores <code>#rrggbb #rrggbb</code>. <b>corte</b> = cambio rápido y suave (0,4 s); <b>fundido N</b> = transición de N segundos. ⏱ El reloj de arriba a la derecha del vídeo marca por dónde va la canción: haz clic en él y se apunta ese momento aquí. Sin líneas se usan Color A/B. El botón detecta las secciones y drops de la canción y te lo rellena.<br>⌨️ <b>En directo:</b> mientras suena, pulsa <code>1</code>…<code>9</code>, <code>0</code> para cambiar de paleta (con <b>Mayús</b> = corte brusco). Cada cambio se apunta aquí para que la próxima grabación lo repita.<br><code>1</code> noche · <code>2</code> fuego · <code>3</code> neon · <code>4</code> acido · <code>5</code> hielo · <code>6</code> sangre · <code>7</code> oro · <code>8</code> vapor · <code>9</code> toxico · <code>0</code> violeta</div>
     </div>
 
     <div class="btns">
@@ -784,6 +787,8 @@ function analyzeSong(buf){
   let bestP=bestL,bestO=0,bestS=-1;
   for(let P=bestL-1;P<=bestL+1.0001;P+=0.02){for(let off=0;off<P;off+=1){let sc=0;for(let x=off;x<M;x+=P)sc+=on2[Math.round(x)]||0;if(sc>bestS){bestS=sc;bestP=P;bestO=off;}}}
   return {energy:sm,sections:secs,bpm:6000/bestP,beatP:bestP/100,beatO:bestO/100};}
+let timerLast=0,lastSongT=0;
+function clock(x){x=Math.max(0,x);const m=Math.floor(x/60),r=x-m*60;return m+':'+(r<10?'0':'')+r.toFixed(1);}
 function beatAt(t){if(!songMap||!playing)return t*2.0;return (t-songMap.beatO)/songMap.beatP;}
 function secAt(t){if(!songMap||!playing)return {i:0,t0:0};const S2=songMap.sections;let i=0;while(i+1<S2.length&&S2[i+1].t<=t)i++;return {i,t0:S2[i].t};}
 function energyAt(t){if(!songMap||!playing)return 0.5;const k=Math.max(0,Math.min(songMap.energy.length-1,Math.floor(t/0.1)));return songMap.energy[k];}
@@ -791,16 +796,16 @@ function parseCol(tok){tok=(tok||'').trim().toLowerCase();if(PRESETS[tok])return
   const hx=tok.match(/#[0-9a-f]{6}/g);if(hx&&hx.length>=2)return [hexToRGB(hx[0]),hexToRGB(hx[1])];if(hx&&hx.length===1)return [hexToRGB(hx[0]),[1,1,1]];return null;}
 function parseColorCues(){const out=[];for(const raw of S('colCues').value.split('\n')){const p=raw.split('|').map(x=>x.trim());if(p.length<2)continue;
   const t=parseTime(p[0]),c=parseCol(p[1]);if(isNaN(t)||!c)continue;let dur=1.5;const tr=(p[2]||'').toLowerCase();
-  if(tr.startsWith('corte'))dur=0;else{const n=parseFloat(tr.replace(/[^0-9.]/g,''));if(!isNaN(n))dur=n;}
+  if(tr.startsWith('corte'))dur=0.4;else{const n=parseFloat(tr.replace(/[^0-9.]/g,''));if(!isNaN(n))dur=n;}
   out.push({t0:t,A:c[0],B:c[1],dur});}return out.sort((x,y)=>x.t0-y.t0);}
 function currentColors(t){let A=hexToRGB(S('colA').value),B=hexToRGB(S('colB').value);
-  if(playing&&colorCues.length){for(const c of colorCues){if(c.t0>t)break;const k=c.dur>0?Math.min(1,(t-c.t0)/c.dur):1;A=mixRGB(A,c.A,k);B=mixRGB(B,c.B,k);}}
+  if(playing&&colorCues.length){for(const c of colorCues){if(c.t0>t)break;let k=c.dur>0?Math.min(1,Math.max(0,(t-c.t0)/c.dur)):1;k=k*k*(3-2*k);A=mixRGB(A,c.A,k);B=mixRGB(B,c.B,k);}}
   if(playing&&S('liveCol').checked){const h=(centSm-0.3)*160;A=hueRot(A,h);B=hueRot(B,h*0.6);const f=1+flash*0.35;B=B.map(x=>cl01(x*f));}
   return [A,B];}
 function genColorCues(){if(!songMap){setStatus('Primero carga una canción.');return;}
   const names=Object.keys(PRESETS);let seed=Math.floor(songMap.energy.length*7.7)%9973;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
   for(let i=names.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[names[i],names[j]]=[names[j],names[i]];}
-  S('colCues').value=songMap.sections.map((s,i)=>fmtT(s.t)+' | '+names[i%names.length]+' | '+(i===0||s.drop?'corte':'fundido 2')).join('\n');
+  S('colCues').value=songMap.sections.map((s,i)=>fmtT(s.t)+' | '+names[i%names.length]+' | '+(i===0||s.drop?'corte':'fundido 3')).join('\n');
   setStatus('Colores generados: '+songMap.sections.length+' secciones ('+songMap.sections.filter(s=>s.drop).length+' cambios bruscos). Edítalos a tu gusto.');}
 
 async function loadAudio(file){if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();
@@ -842,6 +847,7 @@ let t0=performance.now();
 function frame(){
   const now=performance.now(),dt=Math.min(0.1,Math.max(0.001,(now-lastNow)/1000));lastNow=now;
   const t=playing?songT():(now-t0)/1000;
+  if(now-timerLast>90){timerLast=now;if(playing)lastSongT=t;const tm=S('timer');if(tm)tm.textContent=clock(lastSongT)+(buffer?' / '+clock(buffer.duration).replace(/\.\d$/,''):'');}
   readAudio(dt);
   /* calidad automatica: si no llega a ~60 fps baja la resolucion interna; si sobra, la sube */
   emaDt=emaDt*0.93+dt*0.07;qTimer+=dt;
@@ -926,15 +932,18 @@ S('image').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Ima
     hasImg=true;S('style').value='image';clearFB();setStatus('Imagen cargada. Previsualiza o graba en estilo “Imagen”.');URL.revokeObjectURL(img.src);};
   img.onerror=()=>showErr('No se pudo cargar la imagen.');img.src=URL.createObjectURL(f);};
 S('genCols').onclick=genColorCues;
+S('timer').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('colCues');
+  ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+fmtT(tt)+' | neon | fundido 2';
+  setStatus('Apuntado '+fmtT(tt)+' en Colores en el tiempo: cambia "neon" por la paleta que quieras.');};
 function applyPreset(){}
 S('style').onchange=()=>{applyPreset();clearFB();setQ(HEAVY[S('style').value]?2:4);qGood=0;};
 /* atajos: 1-9 y 0 cambian de paleta en directo (Mayus = corte brusco). Se apuntan en 'Colores en el tiempo' */
 const KEYPAL=['violeta','noche','fuego','neon','acido','hielo','sangre','oro','vapor','toxico'];
 document.addEventListener('keydown',e=>{const tg=(e.target.tagName||'').toLowerCase();if(tg==='textarea'||tg==='input'||tg==='select')return;
   const m=e.code&&e.code.match(/^Digit(\d)$/);if(!m)return;const name=KEYPAL[+m[1]];const P=PRESETS[name].map(hexToRGB);
-  if(playing){const t=songT(),dur=e.shiftKey?0:0.6;colorCues.push({t0:t,A:P[0],B:P[1],dur});colorCues.sort((x,y)=>x.t0-y.t0);
-    const ta=S('colCues');ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+fmtT(Math.round(t*10)/10)+' | '+name+' | '+(dur?'fundido 0.6':'corte');
-    setStatus('🎨 '+name+(dur?'':' (corte)')+' en '+fmtT(Math.round(t*10)/10)+' — apuntado en Colores en el tiempo');}
+  if(playing){const t=songT(),dur=e.shiftKey?0.4:1.2;colorCues.push({t0:t,A:P[0],B:P[1],dur});colorCues.sort((x,y)=>x.t0-y.t0);
+    const ta=S('colCues');ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+fmtT(Math.round(t*10)/10)+' | '+name+' | '+(e.shiftKey?'corte':'fundido 1.2');
+    setStatus('🎨 '+name+(e.shiftKey?' (corte)':'')+' en '+fmtT(Math.round(t*10)/10)+' — apuntado en Colores en el tiempo');}
   else{S('colA').value=PRESETS[name][0];S('colB').value=PRESETS[name][1];setStatus('Paleta '+name);}});
 async function ensureCtx(){if(actx&&actx.state==='suspended')await actx.resume();}
 S('play').onclick=async()=>{if(!buffer){setStatus('Primero carga una canción.');return;}
