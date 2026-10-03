@@ -71,6 +71,8 @@
   .chk input{width:auto}
   .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
   .row select{flex:1;width:auto;min-width:0}
+  .row.mark{flex-wrap:wrap}.row.mark select:first-child{flex:1 1 100%}
+  .row select.tr{flex:1 1 auto;width:auto}
   .row button{padding:8px 12px;white-space:nowrap}
   .right textarea{min-height:92px}
   .help{margin-top:6px}.help>summary{font-size:12px}
@@ -83,7 +85,7 @@
 <div class="app">
   <div class="left">
     <div class="top">
-      <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.17 · 18 estilos <span id="qual"></span></small></h1>
+      <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.18 · 18 estilos <span id="qual"></span></small></h1>
     </div>
     <div id="stageBox">
       <div class="stage">
@@ -158,17 +160,18 @@
     </div></details>
 
     <details class="sec" open><summary>2 · Escenas en el tiempo</summary><div class="body">
-      <div class="row"><select id="sceneWhat"><option value="__forma">Siguiente forma (mismo estilo)</option></select><button id="markScene">⏱ Apuntar aquí</button></div>
+      <div class="row mark"><select id="sceneWhat"><option value="__forma">Siguiente forma (mismo estilo)</option></select><select id="sceneTr" class="tr"><option value="fundido 2">fundido 2 s</option><option value="corte">corte</option><option value="fundido 1">fundido 1 s</option><option value="fundido 4">fundido 4 s</option><option value="fundido 8">fundido 8 s</option></select><button id="markScene">⏱ Apuntar aquí</button></div>
       <textarea id="sceneCues" placeholder="Vacío = el mismo estilo toda la canción&#10;0:45 | nebulosa | fundido 3&#10;1:20 | espejo | corte&#10;2:00 | forma 2 | fundido 4"></textarea>
       <div class="hint" id="sceneFb"></div>
       <details class="help"><summary>ⓘ Cómo se escribe</summary><div class="hint">Elige en el desplegable qué quieres que pase y pulsa <b>Apuntar aquí</b> en el momento justo (o escribe la línea a mano). <b>Estilo</b>: su nombre o parte (<code>nebulosa</code>, <code>portal</code>, <code>espejo</code>, <code>op-art</code>, <code>tunel</code>…). <b>forma N</b>: otra forma del mismo estilo (0 = la inicial). Juntos: <code>1:20 | portal forma 3 | fundido 2</code>. <b>corte</b> = 0,4 s; <b>fundido N</b> = N segundos. Las líneas de forma mandan sobre la casilla “Cambiar de forma sola”.</div></details>
     </div></details>
 
     <details class="sec" open><summary>3 · Colores en el tiempo</summary><div class="body">
+      <div class="row mark"><select id="colWhat"></select><select id="colTr" class="tr"><option value="fundido 2">fundido 2 s</option><option value="corte">corte</option><option value="fundido 1">fundido 1 s</option><option value="fundido 4">fundido 4 s</option><option value="fundido 8">fundido 8 s</option></select><button id="markCol">⏱ Apuntar aquí</button></div>
       <div class="row"><button id="genCols">🎨 Generar desde la canción</button></div>
       <textarea id="colCues" placeholder="Vacío = Color A/B&#10;0:00 | noche | corte&#10;0:32 | neon | fundido 2&#10;1:04 | #ff3b00 #ffd36b | fundido 4"></textarea>
       <div class="hint" id="colFb"></div>
-      <details class="help"><summary>ⓘ Paletas y atajos</summary><div class="hint">Paletas: <code>noche</code> <code>fuego</code> <code>neon</code> <code>acido</code> <code>hielo</code> <code>sangre</code> <code>oro</code> <code>vapor</code> <code>toxico</code> <code>ocaso</code> <code>oceano</code> <code>violeta</code> <code>mono</code> <code>selva</code>, o dos colores <code>#rrggbb #rrggbb</code>. <b>corte</b> = 0,4 s; <b>fundido N</b> = N segundos.<br>⏱ Clic en el reloj del vídeo = apunta ese momento aquí.<br>⌨️ Mientras suena: <code>1</code>…<code>0</code> cambian de paleta (Mayús = corte) y se apuntan solos: <code>1</code> noche · <code>2</code> fuego · <code>3</code> neon · <code>4</code> acido · <code>5</code> hielo · <code>6</code> sangre · <code>7</code> oro · <code>8</code> vapor · <code>9</code> toxico · <code>0</code> violeta</div></details>
+      <details class="help"><summary>ⓘ Paletas y atajos</summary><div class="hint">Paletas: <code>noche</code> <code>fuego</code> <code>neon</code> <code>acido</code> <code>hielo</code> <code>sangre</code> <code>oro</code> <code>vapor</code> <code>toxico</code> <code>ocaso</code> <code>oceano</code> <code>violeta</code> <code>mono</code> <code>selva</code>, o dos colores <code>#rrggbb #rrggbb</code>. <b>corte</b> = 0,4 s; <b>fundido N</b> = N segundos.<br>Elige paleta y transición y pulsa <b>Apuntar aquí</b> en el momento justo (también vale clic en el reloj del vídeo). “Color A/B actuales” apunta los dos colores elegidos en Básico.<br>⌨️ Mientras suena: <code>1</code>…<code>0</code> cambian de paleta (Mayús = corte) y se apuntan solos: <code>1</code> noche · <code>2</code> fuego · <code>3</code> neon · <code>4</code> acido · <code>5</code> hielo · <code>6</code> sangre · <code>7</code> oro · <code>8</code> vapor · <code>9</code> toxico · <code>0</code> violeta</div></details>
     </div></details>
 
     <details class="sec"><summary>4 · Palabras temporizadas</summary><div class="body">
@@ -1063,11 +1066,16 @@ function fitStage(){const box=S('stageBox'),st=document.querySelector('.stage');
   if(innerWidth<=980){st.style.width='';st.style.height='';return;}
   const W=box.clientWidth,H=box.clientHeight;let w=W,h=W*9/16;if(h>H){h=H;w=H*16/9;}st.style.width=Math.floor(w)+'px';st.style.height=Math.floor(h)+'px';}
 addEventListener('resize',fitStage);fitStage();setTimeout(fitStage,300);
+{const cw=S('colWhat');const cur=document.createElement('option');cur.value='__actual';cur.textContent='Color A/B actuales';cw.appendChild(cur);
+  Object.keys(PRESETS).forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;cw.appendChild(o);});cw.value='neon';}
+S('markCol').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('colCues');const w=S('colWhat').value;
+  const pal=w==='__actual'?S('colA').value+' '+S('colB').value:w;const line=fmtT(tt)+' | '+pal+' | '+S('colTr').value;
+  ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+line;colorCues=parseColorCues();colFeedback();setStatus('Apuntado: '+line);};
 S('genCols').onclick=()=>{genColorCues();colorCues=parseColorCues();colFeedback();};
 S('sceneCues').addEventListener('input',()=>{sceneCues=parseSceneCues();sceneFeedback();});
 S('markScene').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('sceneCues');const what=S('sceneWhat').value;let line;
-  if(what==='__forma'){const cur=parseSceneCues();const mx=cur.reduce((m,c)=>c.seed!==null?Math.max(m,c.seed):m,0);line=fmtT(tt)+' | forma '+(Math.floor(mx)+1)+' | fundido 2';}
-  else line=fmtT(tt)+' | '+styleName(what).replace(/[()]/g,'').replace(/\s+/g,' ').trim()+' | fundido 2';
+  if(what==='__forma'){const cur=parseSceneCues();const mx=cur.reduce((m,c)=>c.seed!==null?Math.max(m,c.seed):m,0);line=fmtT(tt)+' | forma '+(Math.floor(mx)+1)+' | '+S('sceneTr').value;}
+  else line=fmtT(tt)+' | '+styleName(what).replace(/[()]/g,'').replace(/\s+/g,' ').trim()+' | '+S('sceneTr').value;
   ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+line;sceneCues=parseSceneCues();sceneFeedback();setStatus('Apuntado: '+line);};
 {const sw=S('sceneWhat');[...S('style').options].forEach(o=>{const n=document.createElement('option');n.value=o.value;n.textContent='→ '+o.textContent;sw.appendChild(n);});}
 S('colCues').addEventListener('input',()=>{colorCues=parseColorCues();colFeedback();});
