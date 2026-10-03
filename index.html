@@ -48,7 +48,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.13 · 18 estilos <span id="qual"></span></small></h1>
+  <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.14 · 18 estilos <span id="qual"></span></small></h1>
   <p class="sub">Elige estilo, carga una canción, pon las palabras con su tiempo y graba. Render por GPU en tu navegador.</p>
 
   <div class="stage">
@@ -105,6 +105,10 @@
       <div>
         <label>Intensidad: <b id="intV">1.0</b></label>
         <input type="range" id="intensity" min="0.4" max="2" step="0.05" value="1">
+      </div>
+      <div>
+        <label>Escenas</label>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:12.5px;color:var(--txt)"><input type="checkbox" id="secMorph" style="width:auto"> Cambiar de forma en cada sección (fundido lento)</label>
       </div>
     </div>
 
@@ -526,8 +530,9 @@ void main(){
  float freq=26.0+10.0*sin(sd)+uBass*16.0*I;
  float f1=sin(length(uv-c1)*freq-uFlowE*3.0);
  float f2=sin(length(uv-c2)*freq*1.07+t*2.3);
- float arms=6.0+2.0*floor(mod(uSeed,4.0));
- float sp=sin(a*arms+log(r+1e-3)*(10.0+uMid*10.0*I)-t*2.0);
+ float kS=mod(uSeed,4.0),ar0=6.0+2.0*floor(kS),ar1=6.0+2.0*mod(floor(kS)+1.0,4.0),wS=smoothstep(0.0,1.0,fract(kS));
+ float spL=log(r+1e-3)*(10.0+uMid*10.0*I)-t*2.0;
+ float sp=mix(sin(a*ar0+spL),sin(a*ar1+spL),wS);
  float f3=sin(dot(uv-c3,vec2(cos(t*0.1+sd),sin(t*0.1+sd)))*freq*0.8);
  float m=f1*f2;m=mix(m,m*sp,0.5+0.5*sin(t*0.05+sd));m+=0.35*f3*sp;
  float aa=fwidth(m)*1.2+0.01;float bw=smoothstep(-aa,aa,m);
@@ -607,7 +612,7 @@ const FS_MIRROR=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSeed,uSecT
 void main(){
  float A=uRes.x/uRes.y;vec2 uv=gl_FragCoord.xy/uRes;vec2 c=(uv-0.5)*vec2(A,1.0);float t=uTime,I=uIntensity;
  float zoom=pow(0.985-0.022*uBass*I-0.012*uEnergy,uDt*60.0);
- float dir=mod(uSeed,2.0)<1.0?1.0:-1.0;
+ float dir=cos(uSeed*3.14159265);
  float ang=dir*(0.004+0.008*sin(t*0.07+uSeed))*(1.0+uMid*2.5*I);
  ang*=uDt*60.0;vec2 q=(c*rot(ang))*zoom;
  float seg=3.0+mod(uSeed,4.0);float s=6.2831853/seg;float qa=atan(q.y,q.x);qa=abs(mod(qa,s)-0.5*s);
@@ -788,7 +793,7 @@ function analyzeSong(buf){
   let bestP=bestL,bestO=0,bestS=-1;
   for(let P=bestL-1;P<=bestL+1.0001;P+=0.02){for(let off=0;off<P;off+=1){let sc=0;for(let x=off;x<M;x+=P)sc+=on2[Math.round(x)]||0;if(sc>bestS){bestS=sc;bestP=P;bestO=off;}}}
   return {energy:sm,sections:secs,bpm:6000/bestP,beatP:bestP/100,beatO:bestO/100};}
-let timerLast=0,lastSongT=0;
+let timerLast=0,lastSongT=0,seedSm=0;
 function clock(x){x=Math.max(0,x);const m=Math.floor(x/60),r=x-m*60;return m+':'+(r<10?'0':'')+r.toFixed(1);}
 function beatAt(t){if(!songMap||!playing)return t*2.0;return (t-songMap.beatO)/songMap.beatP;}
 function secAt(t){if(!songMap||!playing)return {i:0,t0:0};const S2=songMap.sections;let i=0;while(i+1<S2.length&&S2[i+1].t<=t)i++;return {i,t0:S2[i].t};}
@@ -890,7 +895,7 @@ function frame(){
     if(L.uIntensity)gl.uniform1f(L.uIntensity,parseFloat(S('intensity').value));
     if(L.uSpecN)gl.uniform1f(L.uSpecN,NB);
     const [ca,cb]=currentColors(t);
-    if(L.uSeed){const sc=secAt(t);gl.uniform1f(L.uSeed,sc.i);if(L.uSecT)gl.uniform1f(L.uSecT,t-sc.t0);if(L.uEnergy)gl.uniform1f(L.uEnergy,energyAt(t));}
+    if(L.uSeed){const sc=secAt(t);const tgt=S('secMorph').checked?sc.i:0;seedSm=fol(seedSm,tgt,dt,1.2,1.2);if(Math.abs(seedSm-tgt)<0.002)seedSm=tgt;gl.uniform1f(L.uSeed,seedSm);if(L.uSecT)gl.uniform1f(L.uSecT,t-sc.t0);if(L.uEnergy)gl.uniform1f(L.uEnergy,energyAt(t));}
     if(L.uColA)gl.uniform3f(L.uColA,ca[0],ca[1],ca[2]);
     if(L.uColB)gl.uniform3f(L.uColB,cb[0],cb[1],cb[2]);
     if(L.uImgAspect)gl.uniform1f(L.uImgAspect,imgAspect);
