@@ -69,7 +69,7 @@
     <div class="top">
       <h1><span>VISUAL</span>TERANTE</h1>
       <nav class="tabs"><a href="./">VISUALIZER</a><a class="on" href="montaje.html">MONTAJE</a></nav>
-      <small id="ver">montaje v0.2 · audio + vídeo</small>
+      <small id="ver">montaje v1.0 · audio + vídeo</small>
     </div>
     <div id="stageBox">
       <div class="stage" id="stage">
@@ -108,6 +108,8 @@
     <details class="sec" open><summary>2 · Sincronización</summary><div class="body">
       <label>Offset del vídeo respecto al audio (ms) — positivo = el vídeo empieza más tarde</label>
       <div class="row"><input type="number" id="offIn" step="1" value="0"><button id="offZero" title="Offset 0">0</button></div>
+      <div class="row"><button id="alignBtn" disabled title="Calcula el offset comparando el audio del vídeo con el máster">🎯 Autoalinear</button></div>
+      <div class="hint" id="alignInfo">Autoalinear necesita que el vídeo traiga audio propio.</div>
       <div class="nudge">
         <button data-n="-frame">−1 fr</button><button data-n="-10">−10 ms</button><button data-n="-1">−1 ms</button>
         <button data-n="1">+1 ms</button><button data-n="10">+10 ms</button><button data-n="frame">+1 fr</button>
@@ -142,6 +144,10 @@
       <div class="prog"><div id="progBar"></div></div>
       <div class="hint" id="progTxt"></div>
       <div class="info" id="verify"></div>
+      <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px">
+        <button id="socialBtn" disabled>📱 Copia para redes (MP4 + AAC)</button>
+        <div class="hint"><span class="warn">⚠ Audio comprimido (AAC 320 kb/s): NO es idéntico al máster.</span> Solo para Instagram, TikTok, etc., que no aceptan PCM. El archivo principal sigue siendo el MKV/MOV de arriba.</div>
+      </div>
     </div></details>
 
     <div class="status" id="status">Listo.</div>
@@ -279,7 +285,7 @@ async function loadRef(MB,at,V){
     const chs=[];for(let c=0;c<ch;c++)chs.push(new Float32Array(Math.max(1,n)));
     for(const w of parts){const p=Math.round((w.timestamp-V.first)*sr);for(let c=0;c<ch;c++){const d=w.buffer.getChannelData(c);const s=Math.max(0,-p);if(s<d.length)chs[c].set(d.subarray(s,Math.min(d.length,n-p)),Math.max(0,p));}}
     const mono=toMono(chs);const ab=actx().createBuffer(ch,chs[0].length,sr);chs.forEach((c,i)=>ab.copyToChannel(c,i));
-    if(S.V!==V)return;V.ref={mono,sr,ab,...buildMip(mono)};setStatus('Referencia lista: onda dorada en la línea de tiempo.','ok');draw();
+    if(S.V!==V)return;V.ref={mono,sr,ab,...buildMip(mono)};setStatus('Referencia lista: onda dorada en la línea de tiempo.','ok');$('alignInfo').textContent='Listo para autoalinear.';refreshExportUI();draw();
   }catch(err){console.error(err);setStatus('No se pudo decodificar el audio del vídeo (no afecta a la exportación): '+err.message,'warn');}
 }
 async function loadThumbs(MB,vt,V){
@@ -446,7 +452,8 @@ function refreshExportUI(){const ok=!!(S.A&&S.V);const c=$('cont').value;let war
   else if(c==='mkv')warn='MKV: el contenedor más fiable para PCM. YouTube lo acepta.';
   else warn='MOV (QuickTime) con PCM: ideal para editores de vídeo.';
   if(!window.showSaveFilePicker)warn+='<br><span class="warn">Tu navegador no permite escribir directo a disco: el archivo se montará en memoria (cuidado con archivos de más de ~1,5 GB).</span>';
-  $('contWarn').innerHTML=warn;$('expBtn').disabled=!ok||c==='mp4'||!!exporting;}
+  $('contWarn').innerHTML=warn;$('expBtn').disabled=!ok||c==='mp4'||!!exporting;$('socialBtn').disabled=!ok||!!exporting;
+  $('alignBtn').disabled=!(S.A&&S.V&&S.V.ref)||!!exporting;$('alignInfo').textContent=S.V&&!S.V.hasAudio?'Este vídeo no trae audio: alinea a mano.':S.V&&S.V.hasAudio&&!S.V.ref?'Preparando la referencia…':$('alignInfo').textContent;}
 function exportPlan(){const A=S.A,V=S.V,half=0.5/V.fps;const copy=Math.abs(S.off)<1e-6&&Math.abs(V.dur-A.dur)<=half;return {copy};}
 function prog(f,txt){$('progBar').style.width=(Math.max(0,Math.min(1,f))*100).toFixed(1)+'%';if(txt!==undefined)$('progTxt').innerHTML=txt;}
 
@@ -456,24 +463,30 @@ async function originalAudioHash(A,onp){
   else{const CH=8<<20;for(let o=0;o<A.dataLen;o+=CH){const u=new Uint8Array(await A.file.slice(A.dataOff+o,A.dataOff+Math.min(A.dataLen,o+CH)).arrayBuffer());h.update(u);bytes+=u.length;if(onp)onp(o/A.dataLen);}}
   A.origHash={hex:h.hex(),bytes};return A.origHash;}
 
-async function pickVideoCodec(MB,w,h,bitrate,cont){
-  const fmt=cont==='mov'?new MB.MovOutputFormat():new MB.MkvOutputFormat();const sup=fmt.getSupportedCodecs();
-  for(const c of ['avc','hevc','vp9','av1']){if(!sup.includes(c))continue;try{if(await MB.canEncodeVideo(c,{width:w,height:h,bitrate}))return c;}catch(e){}}return null;}
+async function pickVideoCodec(MB,w,h,bitrate,cont,list){
+  const fmt=cont==='mp4'?new MB.Mp4OutputFormat():cont==='mov'?new MB.MovOutputFormat():new MB.MkvOutputFormat();const sup=fmt.getSupportedCodecs();
+  for(const c of (list||['avc','hevc','vp9','av1'])){if(!sup.includes(c))continue;try{if(await MB.canEncodeVideo(c,{width:w,height:h,bitrate}))return c;}catch(e){}}return null;}
 
-async function doExport(){
-  const MB=await mb();const A=S.A,V=S.V;if(!A||!V||exporting)return;pause();
-  const cont=$('cont').value;if(cont==='mp4'){refreshExportUI();return;}
-  const ofmt=cont==='mov'?new MB.MovOutputFormat({fastStart:false}):new MB.MkvOutputFormat();
-  if(!ofmt.getSupportedCodecs().includes(A.codec)){setStatus('El contenedor '+cont.toUpperCase()+' no admite '+A.codec+' sin convertir. Exportación cancelada.','err');return;}
-  const plan=exportPlan();const name=safeName($('outName').value)+'.'+cont;
+async function doExport(mode){
+  const MB=await mb();const A=S.A,V=S.V;if(!A||!V||exporting)return;pause();const social=mode==='social';
+  const cont=social?'mp4':$('cont').value;if(!social&&cont==='mp4'){refreshExportUI();return;}
+  const ofmt=social?new MB.Mp4OutputFormat({fastStart:false}):cont==='mov'?new MB.MovOutputFormat({fastStart:false}):new MB.MkvOutputFormat();
+  if(!social&&!ofmt.getSupportedCodecs().includes(A.codec)){setStatus('El contenedor '+cont.toUpperCase()+' no admite '+A.codec+' sin convertir. Exportación cancelada.','err');return;}
+  const plan=exportPlan();const name=safeName($('outName').value)+(social?'_redes':'')+'.'+cont;
   const w=V.w%2?V.w+1:V.w,h=V.h%2?V.h+1:V.h,bitrate=Math.round(w*h*V.fps*parseFloat($('vq').value));
   let vcodec=V.codec;
-  if(plan.copy&&!ofmt.getSupportedCodecs().includes(V.codec))plan.copy=false;
-  if(!plan.copy){vcodec=await pickVideoCodec(MB,w,h,bitrate,cont);if(!vcodec){setStatus('Este navegador no puede codificar vídeo (WebCodecs). Usa Chrome o Edge actualizados.','err');return;}}
+  if(plan.copy&&(!ofmt.getSupportedCodecs().includes(V.codec)||(social&&V.codec!=='avc')))plan.copy=false;
+  if(!plan.copy){vcodec=await pickVideoCodec(MB,w,h,bitrate,cont,social?['avc']:undefined);if(!vcodec){setStatus('Este navegador no puede codificar vídeo (WebCodecs). Usa Chrome o Edge actualizados.','err');return;}}
+  let aacBuf=null,aacRate=A.sr;
+  if(social){const nch=Math.min(2,A.ch);let okRate=false;try{okRate=await MB.canEncodeAudio('aac',{sampleRate:A.sr,numberOfChannels:nch,bitrate:320000});}catch(e){}
+    if(!okRate){aacRate=48000;try{okRate=await MB.canEncodeAudio('aac',{sampleRate:48000,numberOfChannels:nch,bitrate:320000});}catch(e){}}
+    if(!okRate){setStatus('Este navegador no puede codificar AAC. Usa Chrome o Edge en Windows/macOS.','err');return;}
+    if(aacRate!==A.sr||A.ch>2){const oc=new OfflineAudioContext(nch,Math.ceil(A.dur*aacRate),aacRate);const sn=oc.createBufferSource();sn.buffer=A.ab;sn.connect(oc.destination);sn.start();prog(0,'Preparando audio para AAC…');aacBuf=await oc.startRendering();}
+    else aacBuf=A.ab;}
   // memoria (solo si no hay escritura directa a disco)
   const estOut=(plan.copy?V.file.size:bitrate*A.dur/8)+(A.dataLen||A.file.size);
   let handle=null;
-  if(window.showSaveFilePicker){try{handle=await window.showSaveFilePicker({suggestedName:name,types:[{description:cont.toUpperCase(),accept:{[cont==='mov'?'video/quicktime':'video/x-matroska']:['.'+cont]}}]});}
+  if(window.showSaveFilePicker){try{handle=await window.showSaveFilePicker({suggestedName:name,types:[{description:cont.toUpperCase(),accept:{[cont==='mp4'?'video/mp4':cont==='mov'?'video/quicktime':'video/x-matroska']:['.'+cont]}}]});}
     catch(e){if(e&&e.name==='AbortError'){setStatus('Exportación cancelada.');return;}handle=null;}}
   if(!handle&&estOut>1.2e9&&!confirm('El archivo resultante rondará '+mbytes(estOut)+' y tu navegador tendrá que montarlo en memoria. Puede fallar. ¿Continuar?'))return;
   let target,writable=null;
@@ -482,8 +495,8 @@ async function doExport(){
   exporting={out,cancel:false};refreshExportUI();$('cancelBtn').disabled=false;$('verify').innerHTML='';
   const t0=performance.now();prog(0,'Preparando…');
   try{
-    /* ---- pista de audio: bytes PCM originales, sin tocar ---- */
-    const asrc=new MB.EncodedAudioPacketSource(A.codec);out.addAudioTrack(asrc);
+    /* ---- pista de audio: bytes PCM originales, sin tocar (o AAC en la copia para redes) ---- */
+    const asrc=social?new MB.AudioBufferSource({codec:'aac',bitrate:320000}):new MB.EncodedAudioPacketSource(A.codec);out.addAudioTrack(asrc);
     /* ---- pista de video ---- */
     let vsrc;
     if(plan.copy){vsrc=new MB.EncodedVideoPacketSource(V.codec);}
@@ -493,7 +506,11 @@ async function doExport(){
 
     // alimentador de audio (se intercala con el video por tiempo)
     const aSh=new SHA256();let aBytes=0;let feedAudio,flushAudio;
-    if(A.codec==='flac'){const it=new MB.EncodedPacketSink(A.flacTrack).packets();let nx=await it.next();const cfg=await A.flacTrack.getDecoderConfig();let firstA=true,t0a=null;
+    if(social){let pos=0;const ab=aacBuf,R=aacRate;
+      feedAudio=async t=>{while(pos<ab.length&&pos/R<=t){const n=Math.min(R,ab.length-pos);const b=new AudioBuffer({length:n,numberOfChannels:ab.numberOfChannels,sampleRate:R});
+          for(let c=0;c<ab.numberOfChannels;c++)b.copyToChannel(ab.getChannelData(c).subarray(pos,pos+n),c);await asrc.add(b);pos+=n;}};
+      flushAudio=()=>feedAudio(Infinity);}
+    else if(A.codec==='flac'){const it=new MB.EncodedPacketSink(A.flacTrack).packets();let nx=await it.next();const cfg=await A.flacTrack.getDecoderConfig();let firstA=true,t0a=null;
       feedAudio=async t=>{while(!nx.done&&(nx.value.timestamp-(t0a??nx.value.timestamp))<=t){const pk=nx.value;if(t0a===null)t0a=pk.timestamp;
           const np=new MB.EncodedPacket(pk.data,'key',pk.timestamp-t0a,pk.duration);aSh.update(pk.data);aBytes+=pk.data.length;
           await asrc.add(np,firstA?{decoderConfig:cfg}:undefined);firstA=false;nx=await it.next();}};
@@ -536,11 +553,12 @@ async function doExport(){
     const outHash={hex:aSh.hex(),bytes:aBytes};
     let resFile;
     if(handle)resFile=await handle.getFile();
-    else{resFile=new Blob([target.buffer],{type:cont==='mov'?'video/quicktime':'video/x-matroska'});const a=document.createElement('a');a.href=URL.createObjectURL(resFile);a.download=name;document.body.appendChild(a);a.click();a.remove();}
+    else{resFile=new Blob([target.buffer],{type:cont==='mp4'?'video/mp4':cont==='mov'?'video/quicktime':'video/x-matroska'});const a=document.createElement('a');a.href=URL.createObjectURL(resFile);a.download=name;document.body.appendChild(a);a.click();a.remove();}
     const secs=((performance.now()-t0)/1000).toFixed(1);
     prog(1,'✔ Exportado: <b>'+name+'</b> ('+mbytes(resFile.size)+') en '+secs+' s · '+(plan.copy?'vídeo copiado':'vídeo '+vcodec.toUpperCase()+' '+(bitrate/1e6).toFixed(1)+' Mb/s')+'. Verificando el audio…');
     exporting=null;refreshExportUI();$('cancelBtn').disabled=true;
-    await verifyOutput(resFile,name,outHash);
+    if(social){$('verify').innerHTML='<b class="warn">📱 Copia para redes lista: '+name+'</b>\nAudio AAC 320 kb/s · '+aacRate+' Hz (comprimido, NO idéntico al máster)\nVídeo '+(plan.copy?'copiado':vcodec.toUpperCase())+' · '+fmt(A.dur);setStatus('Copia para redes exportada: '+name,'ok');}
+    else await verifyOutput(resFile,name,outHash);
   }catch(err){console.error(err);const canceled=exporting&&exporting.cancel;try{await out.cancel();}catch(e){}
     exporting=null;refreshExportUI();$('cancelBtn').disabled=true;
     if(handle&&writable){try{await writable.abort();}catch(e){}}
@@ -577,9 +595,51 @@ async function verifyOutput(file,name,writtenHash){
 }
 
 $('cont').onchange=refreshExportUI;
-$('expBtn').onclick=()=>doExport();
+$('expBtn').onclick=()=>doExport('pcm');
+$('socialBtn').onclick=()=>doExport('social');
+$('alignBtn').onclick=()=>autoAlign();
 $('cancelBtn').onclick=()=>{if(exporting){exporting.cancel=true;$('progTxt').textContent='Cancelando…';}};
 refreshExportUI();
+
+/* ===================== AUTOALINEAR (correlacion cruzada: gruesa por envolvente + fina por muestra) ===================== */
+function onsetEnv(m,sr,hop){const H=Math.max(1,Math.round(sr*hop)),n=Math.floor(m.length/H),e=new Float32Array(n);let prev=null;
+  for(let i=0;i<n;i++){let s=0;const a=i*H,b=a+H;for(let j=a;j<b;j++)s+=m[j]*m[j];const v=Math.log(1e-10+s/H);e[i]=prev===null?0:Math.max(0,v-prev);prev=v;}
+  let mu=0;for(let i=0;i<n;i++)mu+=e[i];mu/=n||1;let sd=0;for(let i=0;i<n;i++){e[i]-=mu;sd+=e[i]*e[i];}sd=Math.sqrt(sd/(n||1))||1;for(let i=0;i<n;i++)e[i]/=sd;return e;}
+const tick=()=>new Promise(r=>setTimeout(r,0));
+async function autoAlign(){
+  const A=S.A,V=S.V,R=V&&V.ref;if(!A||!R){setStatus('Para autoalinear, el vídeo tiene que traer audio propio y debes cargar el máster.','warn');return;}
+  pause();const btn=$('alignBtn');btn.disabled=true;const info=$('alignInfo');info.textContent='Buscando… (paso 1/2)';await tick();
+  try{
+    // 1) GRUESO: envolventes de golpes a 100 Hz, lags de ±60 s
+    const hop=0.01,ea=onsetEnv(A.mono,A.sr,hop),er=onsetEnv(R.mono,R.sr,hop);
+    const maxL=Math.round(Math.min(60,Math.max(A.dur,V.dur))/hop),minOv=Math.max(50,Math.floor(Math.min(ea.length,er.length)*0.3));
+    const sc=new Float32Array(2*maxL+1).fill(-Infinity);
+    for(let L=-maxL;L<=maxL;L++){const i0=Math.max(0,-L),i1=Math.min(er.length,ea.length-L);const ov=i1-i0;if(ov<minOv)continue;
+      let s=0;for(let i=i0;i<i1;i++)s+=ea[i+L]*er[i];sc[L+maxL]=s/Math.sqrt(ov);if((L&1023)===0){info.textContent='Buscando… '+Math.round((L+maxL)/(2*maxL)*100)+'%';await tick();}}
+    let bi=0;for(let i=1;i<sc.length;i++)if(sc[i]>sc[bi])bi=i;let b2=-Infinity;for(let i=0;i<sc.length;i++)if(Math.abs(i-bi)>8&&sc[i]>b2)b2=sc[i];
+    const coarse=(bi-maxL)*hop,ratio=b2>0?sc[bi]/b2:9;
+    info.textContent='Afinando… (paso 2/2)';await tick();
+    // 2) FINO: correlacion normalizada sobre la onda, ±15 ms alrededor, en la zona de la referencia con mas energia
+    const sr=A.sr,win=Math.min(3,V.dur*0.8,A.dur*0.8),WL=Math.round(0.015*sr),seg=Math.round(win*sr);
+    let bestT=0,bestE=-1;const step=0.25;
+    for(let t=0;t+win<=Math.min(V.dur,R.mono.length/R.sr);t+=step){const ta=t+coarse;if(ta<0.02||ta+win>A.dur-0.02)continue;
+      let e=0;const a=Math.round(t*R.sr),b=a+Math.round(win*R.sr);for(let j=a;j<b;j+=4)e+=R.mono[j]*R.mono[j];if(e>bestE){bestE=e;bestT=t;}}
+    let fine=coarse,ncc=0;
+    if(bestE>0){const r=new Float32Array(seg);const k=R.sr/sr;
+      for(let i=0;i<seg;i++){const x=(bestT*R.sr)+i*k,xi=Math.floor(x),f=x-xi;r[i]=(R.mono[xi]||0)*(1-f)+(R.mono[xi+1]||0)*f;}
+      let rn=0;for(let i=0;i<seg;i++)rn+=r[i]*r[i];
+      const b0=Math.round((bestT+coarse)*sr),cs=new Float64Array(2*WL+1);
+      for(let l=-WL;l<=WL;l++){const o=b0+l;let s=0,mn=0;for(let i=0;i<seg;i++){const v=A.mono[o+i]||0;s+=v*r[i];mn+=v*v;}cs[l+WL]=s/Math.sqrt(rn*mn+1e-20);if((l&63)===0)await tick();}
+      let li=0;for(let i=1;i<cs.length;i++)if(cs[i]>cs[li])li=i;let d=0;
+      if(li>0&&li<cs.length-1){const y0=cs[li-1],y1=cs[li],y2=cs[li+1],den=y0-2*y1+y2;if(den<0)d=0.5*(y0-y2)/den;}
+      fine=(b0+(li-WL)+d)/sr-bestT;ncc=cs[li];}
+    const conf=(ncc>0.9||(ncc>0.8&&ratio>1.15))?'alta':ncc>0.5?'media':'baja';
+    setOff(fine);
+    info.innerHTML='Offset calculado: <b>'+fmtMs(fine)+'</b> · fiabilidad <b class="'+(conf==='alta'?'ok':conf==='media'?'warn':'err')+'">'+conf+'</b> (correlación '+ncc.toFixed(3)+')'+(conf==='baja'?'<br><span class="warn">Revisa a mano con Zoom ms: el audio del vídeo quizá no se parece al máster.</span>':'')+'<br>Puedes retocarlo con los botones.';
+    setStatus('Autoalineado: '+fmtMs(fine),'ok');
+    S.pos=Math.max(0,Math.min(A.dur,bestT+fine+0.3));S.pps=20000;S.viewT0=S.pos-W/2/S.pps;clampView();draw();
+  }catch(err){console.error(err);info.textContent='No se pudo autoalinear: '+err.message;}
+  btn.disabled=!(S.V&&S.V.ref&&S.A);}
 
 /* ===================== bucle ===================== */
 let lastDisp=0;
