@@ -56,6 +56,8 @@
   .info:empty{display:none}
   .hint{font-size:12px;color:var(--mut);line-height:1.5;margin-top:6px}
   .ok{color:var(--tq)}.warn{color:#ffcf6b}.err{color:var(--bad)}
+  .prog{height:8px;background:var(--panel);border:1px solid var(--line);border-radius:99px;overflow:hidden;margin-top:6px}
+  #progBar{height:100%;width:0;background:linear-gradient(90deg,var(--tq),var(--acc));transition:width .2s}
   .status{font-size:12.5px;color:var(--mut);min-height:16px}
   code,kbd{background:var(--panel);padding:1px 5px;border-radius:5px;color:var(--acc2);font-family:ui-monospace,monospace;font-size:11.5px}
   @media (max-width:980px){body{overflow:auto}.app{grid-template-columns:1fr;height:auto}.right{border-left:0}#stageBox{flex:none}.stage{width:100%!important;height:auto!important;aspect-ratio:16/9}}
@@ -67,7 +69,7 @@
     <div class="top">
       <h1><span>VISUAL</span>TERANTE</h1>
       <nav class="tabs"><a href="./">VISUALIZER</a><a class="on" href="montaje.html">MONTAJE</a></nav>
-      <small id="ver">montaje v0.1 · audio + vídeo</small>
+      <small id="ver">montaje v0.2 · audio + vídeo</small>
     </div>
     <div id="stageBox">
       <div class="stage" id="stage">
@@ -129,7 +131,17 @@
     </div></details>
 
     <details class="sec" open><summary>5 · Exportar</summary><div class="body">
-      <div class="hint">La exportación (MKV/MOV con audio idéntico bit a bit y verificación automática) llega en la <b>fase 2</b>.</div>
+      <label>Contenedor</label>
+      <select id="cont"><option value="mkv">MKV — audio PCM intacto (recomendado)</option><option value="mov">MOV — audio PCM intacto</option><option value="mp4">MP4 (no admite PCM)</option></select>
+      <div class="hint" id="contWarn"></div>
+      <label style="margin-top:8px">Calidad del vídeo si hay que recodificar</label>
+      <select id="vq"><option value="0.32">Muy alta (≈ CRF 16)</option><option value="0.22" selected>Alta (≈ CRF 18)</option></select>
+      <label style="margin-top:8px">Nombre del archivo</label>
+      <input type="text" id="outName" placeholder="mi_video_master">
+      <div class="row" style="margin-top:10px"><button class="primary" id="expBtn" disabled>⬇ Exportar</button><button id="cancelBtn" disabled>Cancelar</button></div>
+      <div class="prog"><div id="progBar"></div></div>
+      <div class="hint" id="progTxt"></div>
+      <div class="info" id="verify"></div>
     </div></details>
 
     <div class="status" id="status">Listo.</div>
@@ -232,7 +244,7 @@ $('afile').onchange=async e=>{const f=e.target.files[0];if(!f)return;pause();set
       const MB=await mb();const inp=new MB.Input({source:new MB.BlobSource(f),formats:MB.ALL_FORMATS});const tr=await inp.getPrimaryAudioTrack();
       const parts=[];let n=0;for await(const {buffer} of new MB.AudioBufferSink(tr).buffers()){parts.push(buffer);n+=buffer.length;}
       chs=[];for(let c=0;c<A.ch;c++){const a=new Float32Array(n);let p=0;for(const b of parts){a.set(b.getChannelData(Math.min(c,b.numberOfChannels-1)),p);p+=b.length;}chs.push(a);}
-      A.frames=n;}
+      A.frames=n;A.flacTrack=tr;}
     A.file=f;A.dur=A.frames/A.sr;A.mono=toMono(chs);Object.assign(A,buildMip(A.mono));
     const ab=actx().createBuffer(A.ch,A.frames,A.sr);chs.forEach((c,i)=>ab.copyToChannel(c,i));A.ab=ab;
     S.A=A;S.pos=0;
@@ -281,7 +293,8 @@ function afterLoad(){
   const ready=!!S.A;$('playBtn').disabled=!ready;$('scrub').disabled=!ready;$('scrub').max=S.A?S.A.dur:1;
   $('empty').style.display=S.V?'none':'flex';
   if(S.V&&!S.A)$('empty').textContent='Ahora carga tu audio máster';
-  zoomFit();updatePlan();draw();fitStage();}
+  zoomFit();updatePlan();draw();fitStage();
+  if(!$('outName').value&&(S.V||S.A))$('outName').value=safeName((S.V||S.A).file.name)+'_master';refreshExportUI();}
 
 /* ===================== offset ===================== */
 function setOff(v,src){S.off=Math.round(v*1e6)/1e6;if(src!=='input')$('offIn').value=(S.off*1000).toFixed(3).replace(/\.?0+$/,'')||'0';
@@ -408,6 +421,165 @@ function draw(){if(!W)layout();g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,W
   // cursor
   const cx=Math.round(X(clock()))+0.5;g.strokeStyle='#fff';g.beginPath();g.moveTo(cx,0);g.lineTo(cx,H);g.stroke();g.fillStyle='#fff';g.beginPath();g.moveTo(cx-5,0);g.lineTo(cx+5,0);g.lineTo(cx,7);g.fill();
   const ms=1000/S.pps;$('zinfo').textContent=(ms<1?(ms*1000).toFixed(0)+' µs':ms.toFixed(ms<10?2:0)+' ms')+' por píxel';}
+
+/* ===================== SHA-256 incremental (para verificar sin cargar todo en memoria) ===================== */
+const SHA_K=new Uint32Array([0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+class SHA256{constructor(){this.h=new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);this.b=new Uint8Array(64);this.bl=0;this.len=0;this.w=new Int32Array(64);}
+  update(d){this.len+=d.length;let i=0;
+    if(this.bl){const n=Math.min(64-this.bl,d.length);this.b.set(d.subarray(0,n),this.bl);this.bl+=n;i=n;if(this.bl===64){this.blk(this.b,0);this.bl=0;}}
+    for(;i+64<=d.length;i+=64)this.blk(d,i);if(i<d.length){this.b.set(d.subarray(i),0);this.bl=d.length-i;}return this;}
+  blk(d,o){const w=this.w,K=SHA_K;for(let i=0;i<16;i++){const j=o+4*i;w[i]=(d[j]<<24)|(d[j+1]<<16)|(d[j+2]<<8)|d[j+3];}
+    for(let i=16;i<64;i++){const a=w[i-15],b=w[i-2];w[i]=(w[i-16]+(((a>>>7)|(a<<25))^((a>>>18)|(a<<14))^(a>>>3))+w[i-7]+(((b>>>17)|(b<<15))^((b>>>19)|(b<<13))^(b>>>10)))|0;}
+    const H=this.h;let a=H[0]|0,b=H[1]|0,c=H[2]|0,dd=H[3]|0,e=H[4]|0,f=H[5]|0,g=H[6]|0,h=H[7]|0;
+    for(let i=0;i<64;i++){const t1=(h+(((e>>>6)|(e<<26))^((e>>>11)|(e<<21))^((e>>>25)|(e<<7)))+((e&f)^(~e&g))+K[i]+w[i])|0;
+      const t2=((((a>>>2)|(a<<30))^((a>>>13)|(a<<19))^((a>>>22)|(a<<10)))+((a&b)^(a&c)^(b&c)))|0;h=g;g=f;f=e;e=(dd+t1)|0;dd=c;c=b;b=a;a=(t1+t2)|0;}
+    H[0]+=a;H[1]+=b;H[2]+=c;H[3]+=dd;H[4]+=e;H[5]+=f;H[6]+=g;H[7]+=h;}
+  hex(){const L=this.len*8;const n=(this.bl<56?56:120)-this.bl;const pad=new Uint8Array(n+8);pad[0]=0x80;const dv=new DataView(pad.buffer);
+    dv.setUint32(n,Math.floor(L/4294967296));dv.setUint32(n+4,L>>>0);this.update(pad);return Array.from(this.h,x=>x.toString(16).padStart(8,'0')).join('');}}
+
+/* ===================== exportacion ===================== */
+const PKT_FRAMES=4096;let exporting=null;
+function safeName(s){return (s||'montaje').replace(/\.[a-z0-9]{2,4}$/i,'').replace(/[\\/:*?"<>|]+/g,'').trim()||'montaje';}
+function refreshExportUI(){const ok=!!(S.A&&S.V);const c=$('cont').value;let warn='';
+  if(c==='mp4')warn='<span class="err">✘ MP4 no admite audio PCM: el audio tendría que comprimirse. Elige MKV o MOV.</span>';
+  else if(S.A&&c==='mov'&&S.A.codec==='flac')warn='<span class="warn">MOV con FLAC no es muy compatible: mejor MKV.</span>';
+  else if(c==='mkv')warn='MKV: el contenedor más fiable para PCM. YouTube lo acepta.';
+  else warn='MOV (QuickTime) con PCM: ideal para editores de vídeo.';
+  if(!window.showSaveFilePicker)warn+='<br><span class="warn">Tu navegador no permite escribir directo a disco: el archivo se montará en memoria (cuidado con archivos de más de ~1,5 GB).</span>';
+  $('contWarn').innerHTML=warn;$('expBtn').disabled=!ok||c==='mp4'||!!exporting;}
+function exportPlan(){const A=S.A,V=S.V,half=0.5/V.fps;const copy=Math.abs(S.off)<1e-6&&Math.abs(V.dur-A.dur)<=half;return {copy};}
+function prog(f,txt){$('progBar').style.width=(Math.max(0,Math.min(1,f))*100).toFixed(1)+'%';if(txt!==undefined)$('progTxt').innerHTML=txt;}
+
+async function originalAudioHash(A,onp){
+  if(A.origHash)return A.origHash;const h=new SHA256();let bytes=0;
+  if(A.codec==='flac'){const MB=await mb();for await(const pk of new MB.EncodedPacketSink(A.flacTrack).packets()){h.update(pk.data);bytes+=pk.data.length;}}
+  else{const CH=8<<20;for(let o=0;o<A.dataLen;o+=CH){const u=new Uint8Array(await A.file.slice(A.dataOff+o,A.dataOff+Math.min(A.dataLen,o+CH)).arrayBuffer());h.update(u);bytes+=u.length;if(onp)onp(o/A.dataLen);}}
+  A.origHash={hex:h.hex(),bytes};return A.origHash;}
+
+async function pickVideoCodec(MB,w,h,bitrate,cont){
+  const fmt=cont==='mov'?new MB.MovOutputFormat():new MB.MkvOutputFormat();const sup=fmt.getSupportedCodecs();
+  for(const c of ['avc','hevc','vp9','av1']){if(!sup.includes(c))continue;try{if(await MB.canEncodeVideo(c,{width:w,height:h,bitrate}))return c;}catch(e){}}return null;}
+
+async function doExport(){
+  const MB=await mb();const A=S.A,V=S.V;if(!A||!V||exporting)return;pause();
+  const cont=$('cont').value;if(cont==='mp4'){refreshExportUI();return;}
+  const ofmt=cont==='mov'?new MB.MovOutputFormat({fastStart:false}):new MB.MkvOutputFormat();
+  if(!ofmt.getSupportedCodecs().includes(A.codec)){setStatus('El contenedor '+cont.toUpperCase()+' no admite '+A.codec+' sin convertir. Exportación cancelada.','err');return;}
+  const plan=exportPlan();const name=safeName($('outName').value)+'.'+cont;
+  const w=V.w%2?V.w+1:V.w,h=V.h%2?V.h+1:V.h,bitrate=Math.round(w*h*V.fps*parseFloat($('vq').value));
+  let vcodec=V.codec;
+  if(plan.copy&&!ofmt.getSupportedCodecs().includes(V.codec))plan.copy=false;
+  if(!plan.copy){vcodec=await pickVideoCodec(MB,w,h,bitrate,cont);if(!vcodec){setStatus('Este navegador no puede codificar vídeo (WebCodecs). Usa Chrome o Edge actualizados.','err');return;}}
+  // memoria (solo si no hay escritura directa a disco)
+  const estOut=(plan.copy?V.file.size:bitrate*A.dur/8)+(A.dataLen||A.file.size);
+  let handle=null;
+  if(window.showSaveFilePicker){try{handle=await window.showSaveFilePicker({suggestedName:name,types:[{description:cont.toUpperCase(),accept:{[cont==='mov'?'video/quicktime':'video/x-matroska']:['.'+cont]}}]});}
+    catch(e){if(e&&e.name==='AbortError'){setStatus('Exportación cancelada.');return;}handle=null;}}
+  if(!handle&&estOut>1.2e9&&!confirm('El archivo resultante rondará '+mbytes(estOut)+' y tu navegador tendrá que montarlo en memoria. Puede fallar. ¿Continuar?'))return;
+  let target,writable=null;
+  if(handle){writable=await handle.createWritable();target=new MB.StreamTarget(writable,{chunked:true,chunkSize:8<<20});}else target=new MB.BufferTarget();
+  const out=new MB.Output({format:ofmt,target});
+  exporting={out,cancel:false};refreshExportUI();$('cancelBtn').disabled=false;$('verify').innerHTML='';
+  const t0=performance.now();prog(0,'Preparando…');
+  try{
+    /* ---- pista de audio: bytes PCM originales, sin tocar ---- */
+    const asrc=new MB.EncodedAudioPacketSource(A.codec);out.addAudioTrack(asrc);
+    /* ---- pista de video ---- */
+    let vsrc;
+    if(plan.copy){vsrc=new MB.EncodedVideoPacketSource(V.codec);}
+    else vsrc=new MB.VideoSampleSource({codec:vcodec,bitrate,keyFrameInterval:2,latencyMode:'quality',bitrateMode:'variable',sizeChangeBehavior:'contain'});
+    out.addVideoTrack(vsrc,{frameRate:V.fps});
+    await out.start();
+
+    // alimentador de audio (se intercala con el video por tiempo)
+    const aSh=new SHA256();let aBytes=0;let feedAudio,flushAudio;
+    if(A.codec==='flac'){const it=new MB.EncodedPacketSink(A.flacTrack).packets();let nx=await it.next();const cfg=await A.flacTrack.getDecoderConfig();let firstA=true,t0a=null;
+      feedAudio=async t=>{while(!nx.done&&(nx.value.timestamp-(t0a??nx.value.timestamp))<=t){const pk=nx.value;if(t0a===null)t0a=pk.timestamp;
+          const np=new MB.EncodedPacket(pk.data,'key',pk.timestamp-t0a,pk.duration);aSh.update(pk.data);aBytes+=pk.data.length;
+          await asrc.add(np,firstA?{decoderConfig:cfg}:undefined);firstA=false;nx=await it.next();}};
+      flushAudio=()=>feedAudio(Infinity);}
+    else{const NP=Math.ceil(A.frames/PKT_FRAMES),PB=PKT_FRAMES*A.blockAlign,GRP=64;let ai=0,cache=null,cacheStart=-1;
+      const cfg={codec:A.codec,numberOfChannels:A.ch,sampleRate:A.sr};
+      feedAudio=async t=>{while(ai<NP&&ai*PKT_FRAMES/A.sr<=t){
+          if(cacheStart<0||ai>=cacheStart+GRP){cacheStart=ai;const s=A.dataOff+ai*PB,e=Math.min(A.dataOff+A.dataLen,s+GRP*PB);cache=new Uint8Array(await A.file.slice(s,e).arrayBuffer());}
+          const o=(ai-cacheStart)*PB,bytes=cache.subarray(o,Math.min(cache.length,o+PB));const nf=bytes.length/A.blockAlign;
+          aSh.update(bytes);aBytes+=bytes.length;
+          await asrc.add(new MB.EncodedPacket(bytes,'key',ai*PKT_FRAMES/A.sr,nf/A.sr),ai===0?{decoderConfig:cfg}:undefined);ai++;}};
+      flushAudio=()=>feedAudio(Infinity);}
+
+    const report=(t,label)=>{const el=(performance.now()-t0)/1000,f=t/A.dur,eta=f>0.02?el/f*(1-f):NaN;prog(f,label+' · '+(f*100).toFixed(1)+'% · '+fmt(Math.max(0,t),1)+' de '+fmt(A.dur,1)+(isFinite(eta)?' · quedan ~'+Math.ceil(eta)+' s':''));};
+
+    if(plan.copy){
+      const cfg=await V.vt.getDecoderConfig();let first=true,n=0;
+      for await(const pk of new MB.EncodedPacketSink(V.vt).packets()){if(exporting.cancel)throw new Error('cancelado');
+        const ts=pk.timestamp-V.first;await feedAudio(ts);
+        await vsrc.add(new MB.EncodedPacket(pk.data,pk.type,ts,pk.duration),first?{decoderConfig:cfg}:undefined);first=false;
+        if(++n%15===0)report(ts,'Copiando vídeo sin recodificar');}
+    }else{
+      const fps=V.fps,N=Math.max(1,Math.round(A.dur*fps));const sink=new MB.VideoSampleSink(V.vt);
+      const bc=new OffscreenCanvas(w,h);const bx=bc.getContext('2d');bx.fillStyle='#000';bx.fillRect(0,0,w,h);
+      let firstS=null,lastS=null;
+      if(S.off>0&&$('padStart').value==='freeze')firstS=await sink.getSample(V.first);
+      if(S.off+V.dur<A.dur&&$('padEnd').value==='freeze')lastS=await sink.getSample(V.first+Math.max(0,V.dur-0.5/fps));
+      const it=sink.samples(V.first+Math.max(0,-S.off));let nx=await it.next(),cur=null;
+      for(let k=0;k<N;k++){if(exporting.cancel)throw new Error('cancelado');
+        const t=k/fps,d=k===N-1?Math.max(1e-4,A.dur-t):1/fps,tv=t-S.off;let src=null;
+        if(tv<0)src=firstS;else if(tv>=V.dur)src=lastS;
+        else{const abs=tv+V.first+1e-6;while(!nx.done&&nx.value.timestamp<=abs){if(cur)cur.close();cur=nx.value;nx=await it.next();}src=cur;}
+        const smp=src?src.clone():new MB.VideoSample(bc,{timestamp:t,duration:d});smp.setTimestamp(t);smp.setDuration(d);
+        await feedAudio(t);await vsrc.add(smp);smp.close();
+        if(k%10===0)report(t,'Recodificando vídeo ('+vcodec.toUpperCase()+')');}
+      if(cur)cur.close();if(!nx.done&&nx.value)nx.value.close();try{await it.return();}catch(e){}if(firstS)firstS.close();if(lastS)lastS.close();
+    }
+    await flushAudio();prog(1,'Cerrando el archivo…');
+    await out.finalize();
+    const outHash={hex:aSh.hex(),bytes:aBytes};
+    let resFile;
+    if(handle)resFile=await handle.getFile();
+    else{resFile=new Blob([target.buffer],{type:cont==='mov'?'video/quicktime':'video/x-matroska'});const a=document.createElement('a');a.href=URL.createObjectURL(resFile);a.download=name;document.body.appendChild(a);a.click();a.remove();}
+    const secs=((performance.now()-t0)/1000).toFixed(1);
+    prog(1,'✔ Exportado: <b>'+name+'</b> ('+mbytes(resFile.size)+') en '+secs+' s · '+(plan.copy?'vídeo copiado':'vídeo '+vcodec.toUpperCase()+' '+(bitrate/1e6).toFixed(1)+' Mb/s')+'. Verificando el audio…');
+    exporting=null;refreshExportUI();$('cancelBtn').disabled=true;
+    await verifyOutput(resFile,name,outHash);
+  }catch(err){console.error(err);const canceled=exporting&&exporting.cancel;try{await out.cancel();}catch(e){}
+    exporting=null;refreshExportUI();$('cancelBtn').disabled=true;
+    if(handle&&writable){try{await writable.abort();}catch(e){}}
+    prog(0,canceled?'Exportación cancelada.':'<span class="err">✘ Error al exportar: '+err.message+'</span>');setStatus(canceled?'Cancelado.':'Error al exportar: '+err.message,canceled?'':'err');}
+}
+
+/* ===================== verificacion: vuelve a abrir el archivo y compara el audio con el WAV ===================== */
+async function verifyOutput(file,name,writtenHash){
+  const MB=await mb();const A=S.A,V=S.V;const box=$('verify');box.innerHTML='Verificando…';const lines=[],bad=[];
+  try{
+    const orig=await originalAudioHash(A);
+    const inp=new MB.Input({source:new MB.BlobSource(file),formats:MB.ALL_FORMATS});
+    const ats=await inp.getAudioTracks(),vts=await inp.getVideoTracks();
+    if(ats.length!==1)bad.push('el archivo tiene '+ats.length+' pistas de audio (debería tener 1)');
+    const at=ats[0];if(!at)throw new Error('no hay pista de audio en el archivo exportado');
+    const codec=at.codec,sr=at.sampleRate,ch=at.numberOfChannels;
+    if(codec!==A.codec)bad.push('códec '+codec+' ≠ '+A.codec);
+    if(sr!==A.sr)bad.push('frecuencia '+sr+' Hz ≠ '+A.sr+' Hz');
+    if(ch!==A.ch)bad.push('canales '+ch+' ≠ '+A.ch);
+    const h=new SHA256();let bytes=0,firstTs=null,lastEnd=0;
+    for await(const pk of new MB.EncodedPacketSink(at).packets()){if(firstTs===null)firstTs=pk.timestamp;h.update(pk.data);bytes+=pk.data.length;lastEnd=Math.max(lastEnd,pk.timestamp+pk.duration);}
+    const hx=h.hex();
+    if(bytes!==orig.bytes)bad.push('tamaño de datos de audio '+bytes.toLocaleString('es')+' B ≠ '+orig.bytes.toLocaleString('es')+' B');
+    if(hx!==orig.hex)bad.push('el SHA-256 de las muestras no coincide');
+    if(firstTs!==null&&Math.abs(firstTs)>0.0015)bad.push('el audio no empieza en 0 (empieza en '+(firstTs*1000).toFixed(2)+' ms)');
+    let vdur=null;if(vts[0]){vdur=(await vts[0].computeDuration())-(await vts[0].getFirstTimestamp());if(Math.abs(vdur-A.dur)>1.05/V.fps)lines.push('<span class="warn">⚠ Duración del vídeo '+fmt(vdur)+' vs audio '+fmt(A.dur)+'</span>');}
+    const ok=bad.length===0;
+    box.innerHTML=(ok?'<b class="ok" style="font-size:14px">✔ Audio idéntico al original</b>':'<b class="err" style="font-size:14px">✘ El audio ha sido alterado</b><br><span class="err">• '+bad.join('<br>• ')+'</span>')+
+      '<br><br>Archivo: '+name+'\nAudio: '+codec+' · '+sr+' Hz · '+ch+' can. · empieza en '+((firstTs||0)*1000).toFixed(3)+' ms'+
+      '\nMuestras: '+(A.blockAlign?(bytes/A.blockAlign).toLocaleString('es'):'(FLAC)')+' · '+bytes.toLocaleString('es')+' bytes'+
+      '\nSHA-256 original:  '+orig.hex+'\nSHA-256 exportado: '+hx+(vdur!==null?'\nVídeo: '+fmt(vdur)+' (audio '+fmt(A.dur)+')':'')+(lines.length?'\n'+lines.join('\n'):'');
+    setStatus(ok?'✔ Exportado y verificado: audio idéntico al original.':'✘ La verificación ha encontrado diferencias.',ok?'ok':'err');
+  }catch(err){console.error(err);box.innerHTML='<span class="err">✘ No se pudo verificar: '+err.message+'</span>';}
+}
+
+$('cont').onchange=refreshExportUI;
+$('expBtn').onclick=()=>doExport();
+$('cancelBtn').onclick=()=>{if(exporting){exporting.cancel=true;$('progTxt').textContent='Cancelando…';}};
+refreshExportUI();
 
 /* ===================== bucle ===================== */
 let lastDisp=0;
