@@ -79,13 +79,18 @@
   #saveZone video{max-width:100%}
   @media (max-width:980px){body{overflow:auto}.app{grid-template-columns:1fr;height:auto}.right{border-left:0;overflow:visible}
     #stageBox{flex:none}.stage{width:100%!important;height:auto!important}}
+  .tabs{display:flex;gap:4px}
+  .tabs a{font-size:12px;font-weight:700;letter-spacing:.4px;color:var(--mut);text-decoration:none;padding:5px 11px;border:1px solid var(--line);border-radius:999px}
+  .tabs a.on{color:#04121d;background:#1fd1b2;border-color:#1fd1b2}
+  .tabs a:hover{border-color:#1fd1b2}
 </style>
 </head>
 <body>
 <div class="app">
   <div class="left">
-    <div class="top">
+    <div class="top" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
       <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.19 · 18 estilos <span id="qual"></span></small></h1>
+      <nav class="tabs"><a class="on" href="./">VISUALIZER</a><a href="montaje.html">MONTAJE</a></nav>
     </div>
     <div id="stageBox">
       <div class="stage">
