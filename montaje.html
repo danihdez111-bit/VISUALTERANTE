@@ -69,7 +69,7 @@
     <div class="top">
       <h1><span>VISUAL</span>TERANTE</h1>
       <nav class="tabs"><a href="./">VISUALIZER</a><a class="on" href="montaje.html">MONTAJE</a></nav>
-      <small id="ver">montaje v1.1 · audio + vídeo</small>
+      <small id="ver">montaje v1.2 · audio + vídeo</small>
     </div>
     <div id="stageBox">
       <div class="stage" id="stage">
@@ -564,6 +564,8 @@ async function doExport(mode){
   if(window.showSaveFilePicker){try{handle=await window.showSaveFilePicker({suggestedName:name,types:[{description:cont.toUpperCase(),accept:{[cont==='mp4'?'video/mp4':cont==='mov'?'video/quicktime':'video/x-matroska']:['.'+cont]}}]});}
     catch(e){if(e&&e.name==='AbortError'){setStatus('Exportación cancelada.');return;}handle=null;}}
   if(!handle&&estOut>1.2e9&&!confirm('El archivo resultante rondará '+mbytes(estOut)+' y tu navegador tendrá que montarlo en memoria. Puede fallar. ¿Continuar?'))return;
+  let hwPref='no-preference';
+  for(;;){
   let target,writable=null;
   if(handle){writable=await handle.createWritable();target=new MB.StreamTarget(writable,{chunked:true,chunkSize:8<<20});}else target=new MB.BufferTarget();
   const out=new MB.Output({format:ofmt,target});
@@ -575,7 +577,7 @@ async function doExport(mode){
     /* ---- pista de video ---- */
     let vsrc;
     if(plan.copy){vsrc=new MB.EncodedVideoPacketSource(V.codec);}
-    else vsrc=new MB.VideoSampleSource({codec:vcodec,bitrate,keyFrameInterval:2,latencyMode:'quality',bitrateMode:'variable',sizeChangeBehavior:'contain'});
+    else vsrc=new MB.VideoSampleSource({codec:vcodec,bitrate,keyFrameInterval:2,latencyMode:'quality',bitrateMode:'variable',sizeChangeBehavior:'contain',hardwareAcceleration:hwPref});
     out.addVideoTrack(vsrc,{frameRate:V.fps});
     await out.start();
 
@@ -609,7 +611,7 @@ async function doExport(mode){
         if(++n%15===0)report(ts,'Copiando vídeo sin recodificar');}
     }else{
       const fps=V.fps,N=Math.max(1,Math.round(AL*fps)),OF=off(),VL=vLen(),VS=V.first+S.v.in;const sink=new MB.VideoSampleSink(V.vt);
-      const bc=new OffscreenCanvas(w,h);const bx=bc.getContext('2d');bx.fillStyle='#000';bx.fillRect(0,0,w,h);
+      const fc=new OffscreenCanvas(w,h);const fx=fc.getContext('2d',{alpha:false});
       let firstS=null,lastS=null;
       if(OF>0&&$('padStart').value==='freeze')firstS=await sink.getSample(VS);
       if(OF+VL<AL&&$('padEnd').value==='freeze')lastS=await sink.getSample(VS+Math.max(0,VL-0.5/fps));
@@ -618,7 +620,9 @@ async function doExport(mode){
         const t=k/fps,d=k===N-1?Math.max(1e-4,AL-t):1/fps,tv=t-OF;let src=null;
         if(tv<0)src=firstS;else if(tv>=VL)src=lastS;
         else{const abs=tv+VS+1e-6;while(!nx.done&&nx.value.timestamp<=abs){if(cur)cur.close();cur=nx.value;nx=await it.next();}src=cur;}
-        const smp=src?src.clone():new MB.VideoSample(bc,{timestamp:t,duration:d});smp.setTimestamp(t);smp.setDuration(d);
+        fx.fillStyle='#000';fx.fillRect(0,0,w,h);
+        if(src){const sw=src.displayWidth||w,sh=src.displayHeight||h,sc=Math.min(w/sw,h/sh),dw=Math.round(sw*sc),dh=Math.round(sh*sc);src.draw(fx,Math.round((w-dw)/2),Math.round((h-dh)/2),dw,dh);}
+        const smp=new MB.VideoSample(fc,{timestamp:t,duration:d});
         await feedAudio(t);await vsrc.add(smp);smp.close();
         if(k%10===0)report(t,'Recodificando vídeo ('+vcodec.toUpperCase()+')');}
       if(cur)cur.close();if(!nx.done&&nx.value)nx.value.close();try{await it.return();}catch(e){}if(firstS)firstS.close();if(lastS)lastS.close();
@@ -634,10 +638,13 @@ async function doExport(mode){
     exporting=null;refreshExportUI();$('cancelBtn').disabled=true;
     if(social){$('verify').innerHTML='<b class="warn">📱 Copia para redes lista: '+name+'</b>\nAudio AAC 320 kb/s · '+aacRate+' Hz (comprimido, NO idéntico al máster)\nVídeo '+(plan.copy?'copiado':vcodec.toUpperCase())+' · '+fmt(AL);setStatus('Copia para redes exportada: '+name,'ok');}
     else await verifyOutput(resFile,name,outHash);
+    return;
   }catch(err){console.error(err);const canceled=exporting&&exporting.cancel;try{await out.cancel();}catch(e){}
     exporting=null;refreshExportUI();$('cancelBtn').disabled=true;
     if(handle&&writable){try{await writable.abort();}catch(e){}}
-    prog(0,canceled?'Exportación cancelada.':'<span class="err">✘ Error al exportar: '+err.message+'</span>');setStatus(canceled?'Cancelado.':'Error al exportar: '+err.message,canceled?'':'err');}
+    if(!canceled&&!plan.copy&&hwPref!=='prefer-software'){hwPref='prefer-software';prog(0,'El codificador por hardware ha fallado ('+err.message+'). Reintentando con el codificador por software…');setStatus('Reintentando por software…','warn');continue;}
+    prog(0,canceled?'Exportación cancelada.':'<span class="err">✘ Error al exportar: '+err.message+'</span>');setStatus(canceled?'Cancelado.':'Error al exportar: '+err.message,canceled?'':'err');return;}
+  }
 }
 
 /* ===================== verificacion: vuelve a abrir el archivo y compara el audio con el WAV ===================== */
