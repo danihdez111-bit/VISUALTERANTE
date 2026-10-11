@@ -96,7 +96,7 @@
 <div class="app">
   <div class="left">
     <div class="top" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-      <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.21 · 18 estilos <span id="qual"></span></small></h1>
+      <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.22 · 18 estilos <span id="qual"></span></small></h1>
       <nav class="tabs"><a class="on" href="./">VISUALIZER</a><a href="montaje.html">MONTAJE</a></nav>
     </div>
     <div id="stageBox">
@@ -454,8 +454,8 @@ void main(){
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
 const FS_RIDGES=HEAD+`uniform sampler2D uHist;uniform float uHistRow,uKickAge;
-float histAt(float f,int age){int row=int(mod(uHistRow-float(age)+64.0,64.0));float x=clamp(f,0.0,1.0)*71.0;int xi=int(x);
- float a=texelFetch(uHist,ivec2(xi,row),0).r,b=texelFetch(uHist,ivec2(min(xi+1,71),row),0).r;return mix(a,b,fract(x));}
+float histAt(float f,int age){int row=int(mod(uHistRow-float(age)+64.0,64.0));float x=clamp(0.08+0.7*f,0.0,1.0)*71.0;int xi=int(x);
+ float a=0.0;for(int k=-2;k<=3;k++){float w=1.0-abs(float(k)-fract(x)-0.5)/3.0;a+=texelFetch(uHist,ivec2(clamp(xi+k,0,71),row),0).r*w;}return a/3.0;}
 void main(){
  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;
  float sw=0.03*sin(t*0.05);uv=mat2(cos(sw),-sin(sw),sin(sw),cos(sw))*uv;
@@ -474,7 +474,7 @@ void main(){
   float z=0.9+float(i)*0.22;
   float X=uv.x*z+0.15*sin(t*0.04);float f=abs(X)/1.6;
   float h=f<1.0?histAt(f,i):0.0;
-  h=pow(h,1.5)*(0.8+0.5*I)*(1.0-0.45*f)*(0.5+0.5*smoothstep(0.0,0.14,f));
+  h=pow(h,1.4)*(0.7+0.5*I)*exp(-f*f*2.2)*(0.6+0.8*f);
   h+=0.05*fbm(vec2(X*2.5,float(i)*0.35+t*0.05));
   float y=hor+(-camH+h*0.48)/z;
   float fade=exp(-float(i)*0.05);
@@ -542,7 +542,7 @@ void main(){
  vec3 rd=normalize(fw*1.5+uv.x*rt+uv.y*up);
  vec3 L=normalize(vec3(-0.5,0.35,0.8));float mo=dot(rd,L);
  /* cielo: degradado, luna, estrellas, relampago en cada kick */
- vec3 sky=mix(uColA*0.14,uColA*0.02,clamp(rd.y*2.0,0.0,1.0));
+ vec3 sky=mix(palette(0.5)*0.32,palette(0.1)*0.05,clamp(rd.y*2.5,0.0,1.0));
  sky+=palette(0.95)*smoothstep(0.9990,0.9994,mo)+palette(0.7)*pow(max(mo,0.0),60.0)*0.4*(0.6+uLevel);
  vec2 sg=vec2(atan(rd.x,rd.z),rd.y)*70.0;vec2 gi=floor(sg);vec2 gf=fract(sg)-0.5;
  sky+=vec3(0.85,0.9,1.0)*smoothstep(0.12,0.0,length(gf-(vec2(hash(gi),hash(gi+4.0))-0.5)*0.6))*step(0.9,hash(gi+1.0))*smoothstep(0.02,0.2,rd.y)*(0.5+uHigh*1.5*I);
@@ -553,15 +553,15 @@ void main(){
  if(hit){vec3 p=ro+rd*tt;float e=0.02;
   vec3 n=normalize(vec3(H(p.xz-vec2(e,0.0))-H(p.xz+vec2(e,0.0)),2.0*e,H(p.xz-vec2(0.0,e))-H(p.xz+vec2(0.0,e))));
   float dif=max(dot(n,L),0.0);float rim=pow(1.0-max(dot(-rd,n),0.0),3.0);
-  vec3 alb=mix(uColA*0.10,palette(0.35)*0.55,smoothstep(-0.2,1.0,p.y));
+  vec3 alb=mix(palette(0.2)*0.35,palette(0.45)*0.9,smoothstep(-0.2,1.0,p.y));
   alb=mix(alb,palette(0.98)*0.9,smoothstep(1.0,1.5,p.y+n.y*0.4)*0.8);
-  col=alb*(0.02+0.85*dif*dif)+palette(0.8)*rim*0.15;
+  col=alb*(0.1+1.1*dif)+palette(0.8)*rim*0.25;
   /* curvas de nivel de neon que fluyen con los medios */
-  float cl=p.y*7.0-t*0.6;float lw=fwidth(cl)*1.3+0.01;float dl=abs(fract(cl+0.5)-0.5);
-  col+=palette(0.85)*(1.0-smoothstep(0.0,lw,dl))*(0.15+1.5*uMid*I)*exp(-tt*0.06);
+  float cl=p.y*4.0-uFlowE*0.5;float lw=fwidth(cl)*1.5+0.01;float dl=abs(fract(cl+0.5)-0.5);
+  col+=palette(0.85)*((1.0-smoothstep(0.0,lw,dl))+0.3*exp(-dl/(lw*4.0)))*(0.12+1.0*uMid*I)*exp(-tt*0.05);
   col+=palette(0.95)*uFlash*I*(0.2+0.6*dif);
   float fog=1.0-exp(-tt*0.075);
-  col=mix(col,uColA*0.18+palette(0.7)*pow(max(mo,0.0),8.0)*0.25,fog);}
+  col=mix(col,palette(0.5)*0.3+palette(0.8)*pow(max(mo,0.0),8.0)*0.35,fog);}
  float r=length(uv);
  col*=1.0-0.45*pow(r*0.9,2.2);
  col=1.0-exp(-col*1.35);
@@ -634,7 +634,7 @@ vec3 aur(vec3 rd,float t,float I){vec3 c=vec3(0.0);float dz=hash(gl_FragCoord.xy
   float cur=pow(1.0-abs(v),6.0);
   float sp=texture(uSpec,vec2(fract(q.x*0.04+0.5),0.5)).r;
   vec3 cc=mix(palette(0.55),palette(0.95),fi/24.0);
-  c+=cc*cur*exp(-fi*0.12)*(0.45+1.6*sp*I)*0.15;}
+  c+=cc*cur*exp(-fi*0.1)*(0.8+1.4*sp*I+0.6*uLevel)*0.26;}
  return c*smoothstep(0.0,0.15,rd.y)*(1.0+uFlash*1.5*I);}
 float mount(float x,float t){return 0.035+0.11*fbm(vec2(x*2.2+t*0.004,3.0))+0.03*fbm(vec2(x*9.0,7.0));}
 void main(){
@@ -644,7 +644,7 @@ void main(){
   su.y=2.0*hor-uv.y+0.006*sin(uv.y*160.0+t*2.0)*(1.0+uBass*2.0*I)+0.02*rp;
   su.x+=0.004*sin(uv.y*90.0-t*1.5);}
  vec3 rd=normalize(vec3(su.x,su.y-hor+0.02,1.0));rd.xz*=rot(t*0.01);
- vec3 col=mix(uColA*0.07,uColA*0.01,clamp(rd.y*1.5,0.0,1.0));
+ vec3 col=mix(palette(0.35)*0.16,palette(0.1)*0.02,clamp(rd.y*1.5,0.0,1.0));
  vec2 sg=su*60.0;vec2 gi=floor(sg);vec2 gf=fract(sg)-0.5;
  col+=vec3(0.85,0.9,1.0)*smoothstep(0.1,0.0,length(gf-(vec2(hash(gi),hash(gi+4.0))-0.5)*0.6))*step(0.88,hash(gi+1.0))*(0.6+0.4*sin(t*2.0+hash(gi)*20.0))*(0.6+uHigh*1.5*I);
  vec3 a=aur(rd,t,I);col+=a;
@@ -691,7 +691,7 @@ void main(){
  vec3 dir=normalize(vec3(uv*0.8,1.0));
  float a1=0.3*sin(t*0.03)+uSeed*0.9,a2=0.2+t*0.02;
  dir.xz*=rot(a1);dir.xy*=rot(a2);
- vec3 from=vec3(1.0+uSeed*0.37,0.5,0.5)+vec3(t*0.012,t*0.009,-2.0+uFlow*0.05);
+ vec3 from=vec3(1.0+uSeed*0.37,0.5,0.5)+vec3(0.25*sin(t*0.011),0.2*sin(t*0.008+1.0),-2.0+0.35*sin(uFlow*0.018));
  from.xz*=rot(a1);from.xy*=rot(a2);
  float fp=0.53+0.015*sin(uSeed*2.1);
  float s=0.1,fade=1.0;vec3 v=vec3(0.0);
@@ -707,7 +707,7 @@ void main(){
   fade*=0.73;s+=0.1;}
  v=mix(vec3(length(v)),v,0.85)*0.01;
  float l=dot(v,vec3(0.333));
- vec3 col=palette(clamp(l*1.1,0.0,1.0))*l*2.2+v*0.25;
+ vec3 col=palette(clamp(0.2+sqrt(l)*0.95,0.0,1.0))*l*4.2+v*0.18;
  col*=0.8+0.35*uLevel+0.22*bp*I;
  float rr=length(uv);
  col*=1.0+0.18*uFlash*I;
