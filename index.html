@@ -96,7 +96,7 @@
 <div class="app">
   <div class="left">
     <div class="top" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-      <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.20 · 18 estilos <span id="qual"></span></small></h1>
+      <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.21 · 18 estilos <span id="qual"></span></small></h1>
       <nav class="tabs"><a class="on" href="./">VISUALIZER</a><a href="montaje.html">MONTAJE</a></nav>
     </div>
     <div id="stageBox">
@@ -182,6 +182,8 @@
           <select id="tex"><option value="0">Ninguna</option><option value="1">Grano de película</option><option value="2">Papel</option><option value="3">Lienzo</option><option value="4">VHS</option><option value="5">Semitono (puntos)</option><option value="6">Película antigua (polvo y rayas)</option><option value="7">Cristal esmerilado</option></select>
           <input type="range" id="texAmt" min="0" max="1.5" step="0.05" value="1" title="Fuerza de la textura">
         </div>
+        <div><label>Destellos con el golpe: <b id="fxFlashV">1.00</b></label><input type="range" id="fxFlash" min="0" max="1" step="0.05" value="1" title="Fogonazos de luz en cada bombo (0 = ninguno)"></div>
+        <div><label>Chispas y partículas extra: <b id="fxSparkV">1.00</b></label><input type="range" id="fxSpark" min="0" max="1" step="0.05" value="1" title="Chispitas con los agudos, salpicaduras y cortes de glitch (0 = ninguno)"></div>
         <div class="full">
           <label>Intensidad: <b id="intV">1.0</b></label>
           <input type="range" id="intensity" min="0.4" max="2" step="0.05" value="1">
@@ -230,7 +232,7 @@ let imgTex, imgAspect=1, hasImg=false;
 let fgTex, fgAspect=1, hasFg=false;
 const NB=72, specData=new Uint8Array(NB);
 let histTex,histRow=0,histLast=0;
-const UNAMES=['uPal','uTrail','uBrush','uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uKickAge','uHist','uHistRow','uSeed','uSecT','uEnergy','uPrev','uFlow','uFlowE','uDt','uTS','uBeat'];
+const UNAMES=['uPal','uTrail','uBrush','uFxFlash','uFxSpark','uRes','uTime','uBass','uMid','uHigh','uLevel','uFlash','uIntensity','uSpec','uSpecN','uColA','uColB','uImg','uImgAspect','uHasImg','uKickAge','uHist','uHistRow','uSeed','uSecT','uEnergy','uPrev','uFlow','uFlowE','uDt','uTS','uBeat'];
 
 function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
   if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
@@ -245,7 +247,7 @@ void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));vUv=p;gl
 const HEAD=`#version 300 es
 precision highp float;
 uniform vec2 uRes;uniform float uTime,uBass,uMid,uHigh,uLevel,uFlash,uIntensity,uSpecN;
-uniform sampler2D uSpec;uniform vec3 uColA,uColB;uniform vec3 uPal[5];uniform float uFlow,uFlowE,uDt,uBeat,uSeed,uTrail,uBrush;uniform vec2 uTS;
+uniform sampler2D uSpec;uniform vec3 uColA,uColB;uniform vec3 uPal[5];uniform float uFlow,uFlowE,uDt,uBeat,uSeed,uTrail,uBrush,uFxFlash,uFxSpark;uniform vec2 uTS;
 out vec4 o;
 float trailK(){return exp2((0.5-uTrail)*4.0);}
 float hash(vec2 p){return fract(sin(dot(p,vec2(27.17,61.31)))*43758.5453);}
@@ -262,78 +264,131 @@ mat2 rot(float a){float c=cos(a),s=sin(a);return mat2(c,-s,s,c);}
 vec2 coverUV(vec2 c,float imgA,float scrA){vec2 iuv=c;if(imgA>scrA)iuv.x*=scrA/imgA;else iuv.y*=imgA/scrA;return iuv+0.5;}
 `;
 
-const FS_TUNNEL=HEAD+`void main(){
- vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float r=length(uv)+1e-3;float ang=atan(uv.y,uv.x);float an=ang/6.28318530718;
- float depth=0.40/r+uFlow*0.55;
- float a2=an+uTime*0.04+0.15*sin(uTime*0.07);
- float pu=smoothstep(0.47,0.5,abs(fract(a2*18.0)-0.5));float pv=smoothstep(0.47,0.5,abs(fract(depth*3.0)-0.5));
- float grid=clamp(pu+pv,0.0,1.0);float plasma=0.5+0.5*sin(a2*12.5663706+depth*3.5+uTime*0.6);
- float sa=fract(a2);float tex=mix(fbm(vec2(sa*10.0,depth*2.2)),fbm(vec2((sa-1.0)*10.0,depth*2.2)),smoothstep(0.0,1.0,sa));float lum=clamp(0.42*grid+0.30*plasma+0.42*tex,0.0,1.0);
- float fog=pow(clamp(r*1.25,0.0,1.0),0.9);lum*=fog*(0.5+0.9*uLevel);vec3 col=palette(lum);
- float sp=texture(uSpec,vec2(0.06+abs(an)*1.86,0.5)).r;float r0=0.13+0.05*uBass*uIntensity;float len=0.015+sp*0.34*uIntensity;
- float fill=smoothstep(r0+len,r0,r)*step(r0,r);float tip=smoothstep(0.006,0.0,abs(r-(r0+len)));
- col+=palette(0.55+0.4*sp)*fill*0.9;col+=palette(1.0)*tip*0.8;
- col+=palette(0.8)*uFlash*exp(-r*2.8)*0.35*uIntensity;col+=palette(0.92)*exp(-r*6.0)*(0.25+uHigh*0.8);
- col*=1.0-0.72*pow(clamp(r*0.92,0.0,1.0),2.2);col+=(hash(gl_FragCoord.xy+uTime)-0.5)*0.025;
+const FS_TUNNEL=HEAD+`uniform float uKickAge;
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;
+ vec2 ctr=0.05*vec2(sin(t*0.19+uSeed),cos(t*0.15+uSeed*1.3));
+ vec2 q=uv-ctr*smoothstep(0.6,0.0,length(uv));
+ float r=length(q)+1e-4,a=atan(q.y,q.x);
+ float z=0.3/r,zz=z+uFlow*0.9;
+ float N=12.0+4.0*mod(floor(uSeed+0.5),3.0);
+ float A=a/6.2831853*N+zz*0.18*sin(uSeed*0.7+0.4)+t*0.03;
+ float fa=abs(fract(A)-0.5),fz=abs(fract(zz*1.5)-0.5);
+ float aw=N/(6.2831853*r)/uRes.y,zw=1.5*0.3/(r*r)/uRes.y;
+ float da=0.5-fa,dz=0.5-fz;
+ float lineA=smoothstep(aw*2.0+0.012,0.0,da)+0.25*exp(-da*9.0);
+ float idx=floor(zz*1.5);float sp=texture(uSpec,vec2(0.05+0.6*fract(idx*0.618),0.5)).r;
+ float lineZ=(smoothstep(zw*2.0+0.015,0.0,dz)+0.3*exp(-dz*8.0))*(0.35+1.4*sp*I);
+ vec2 sc=vec2(cos(a),sin(a));
+ float n=fbm(sc*1.3+vec2(zz*0.7,zz*0.31));
+ vec3 wall=palette(0.15+0.45*n)*(0.10+0.25*n);
+ float pid=mod(floor(A),N);float ph=hash(vec2(pid,idx));
+ float lit=smoothstep(0.55,0.95,ph+sp*0.6*I-0.25)*(1.0-smoothstep(0.2,0.5,max(fa*2.0-0.6,fz*2.0-0.6)+0.3));
+ vec3 col=wall+palette(0.55+0.35*fract(ph*5.3))*lit*0.45*(0.5+uLevel)+palette(0.7)*lineA*0.55+palette(0.85)*lineZ*0.75;
+ float fog=smoothstep(0.02,0.42,r);col*=fog;
+ float fs=0.5-0.5*cos(a*4.0);
+ float ssp=texture(uSpec,vec2(0.04+fs*0.55,0.5)).r;
+ float R0=0.09+0.03*uBass*I+ssp*0.05*I;
+ col+=palette(0.9)*exp(-abs(r-R0)*160.0)*(0.4+1.2*uLevel);
+ col+=palette(0.97)*exp(-r*9.0)*(0.25+0.9*uBass*I);
+ float rk=0.06+uKickAge*1.6;col+=palette(0.8)*exp(-abs(r-rk)*40.0)*exp(-uKickAge*3.0)*0.5*I*uFxFlash;
+ col*=1.0-0.4*pow(clamp(length(uv)*0.9,0.0,1.0),2.2);
+ col=1.0-exp(-col*1.5);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.015;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
 const FS_KALEIDO=HEAD+`uniform float uKickAge;
-vec3 layer(vec2 uv,float z,float t,float I){
- float sc=mix(6.0,0.35,z);vec2 p=uv*sc;
- float seg=8.0;float a=atan(p.y,p.x)+t*0.04+0.25*uBass*I*sin(z*6.28);float r=length(p);
- float s=6.2831853/seg;a=abs(mod(a,s)-0.5*s);p=vec2(cos(a),sin(a))*r;
- vec2 q=p+vec2(fbm(p*0.8+t*0.05),fbm(p*0.8-t*0.04))*1.2;
- float f=fbm(q*1.5+z*7.0);
- float facet=abs(sin(q.x*3.0+f*4.0))*abs(sin(q.y*3.0-f*3.0));
- float edges=smoothstep(0.08,0.0,facet);
- vec3 c=palette(0.1+0.8*f)*(0.12+0.9*f*f);
- c+=palette(0.95)*edges*(0.25+1.3*uHigh*I)*(0.4+f);
- return c;}
+vec2 h22(vec2 p){return fract(sin(vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))))*43758.5453);}
+vec3 vor(vec2 x,float t){vec2 n=floor(x),f=fract(x);float d1=8.0,d2=8.0;vec2 id=vec2(0.0);
+ for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){vec2 g=vec2(float(i),float(j));vec2 o2=h22(n+g);o2=0.5+0.42*sin(t*0.35+6.2831*o2);vec2 rr=g+o2-f;float d=dot(rr,rr);
+  if(d<d1){d2=d1;d1=d;id=n+g;}else if(d<d2)d2=d;}
+ return vec3(sqrt(d2)-sqrt(d1),hash(id),hash(id+3.7));}
+vec3 layer(vec2 uv,float z,float t,float I,float seg){
+ float sc=mix(4.5,0.7,z);vec2 p=uv*sc;
+ float a=atan(p.y,p.x)+t*0.025,r=length(p),s=6.2831853/seg;a=abs(mod(a,s)-0.5*s);p=vec2(cos(a),sin(a))*r;
+ vec3 v=vor(p*1.7+vec2(0.0,t*0.04),t);
+ float aa=fwidth(v.x)+0.004;float edge=smoothstep(0.05+aa,0.05-aa,v.x);
+ float sp=texture(uSpec,vec2(0.05+0.6*v.y,0.5)).r;
+ vec3 glass=palette(0.2+0.7*v.y)*(0.25+0.55*v.z+0.9*sp*I*v.z+0.2*uLevel);
+ glass*=0.55+0.45*smoothstep(0.0,0.35,v.x);
+ return mix(glass,palette(0.96)*(0.35+1.0*uHigh*I),edge*0.9);}
 void main(){
  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;float r=length(uv);
- vec3 col=vec3(0.0);
- for(int k=0;k<4;k++){float z=fract(t*0.045+float(k)*0.25);float w=sin(z*3.14159);col+=layer(uv,z,t+float(k)*13.0,I)*w*w*0.6;}
- col*=0.5+0.9*uLevel;
- col*=1.0+0.18*uFlash*I;col+=palette(0.8)*uFlash*exp(-r*3.0)*0.15*I;
+ float seg=6.0+2.0*mod(floor(uSeed+0.5),4.0);
+ vec3 col=vec3(0.0);float ws=0.0;
+ for(int k=0;k<2;k++){float z=fract(uFlow*0.03+float(k)*0.5);float w=sin(z*3.14159);w*=w;col+=layer(uv,z,t+float(k)*13.0,I,seg)*w;ws+=w;}
+ col/=max(ws,1e-3);
+ col*=0.55+0.7*uLevel;
+ col+=palette(0.9)*exp(-r*7.0)*(0.15+0.6*uBass*I);
+ col*=1.0+0.15*uFlash*I;
  col*=1.0-0.45*pow(r*0.9,2.2);
- col=1.0-exp(-col*1.3);
- col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
+ col=1.0-exp(-col*1.4);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.015;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
-const FS_SYNTH=HEAD+`void main(){
- vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;vec3 col;
- if(uv.y>0.0){
-   col=mix(uColA*0.55,uColB*0.30,clamp(uv.y*1.3,0.0,1.0));
-   vec2 s=uv-vec2(0.3*sin(uSeed*1.7),0.22-0.06*(1.0-cos(uSeed*1.3)));float sr=0.32+0.04*uBass*uIntensity;float d=length(s);
-   float sun=smoothstep(sr,sr-0.012,d);
-   float sl=step(0.0,sin(uv.y*140.0))*step(s.y,0.0);
-   sun*=(1.0-sl*0.75);
-   vec3 sunc=mix(vec3(1.0,0.86,0.5),uColB,clamp(s.y+0.35,0.0,1.0));
-   col=mix(col,sunc,sun);
-   col+=(1.0-smoothstep(sr,sr+0.18,d))*0.28*uColB;
- } else {
-   float yy=max(-uv.y,0.0001);uv.x+=0.25*sin(uSeed*0.9);float persp=1.0/yy;
-   float scroll=uFlow;
-   vec2 G=vec2(uv.x*persp*0.5,persp*0.5-scroll);vec2 fw=fwidth(G)*1.3+0.025;
-   vec2 gl2=smoothstep(0.5-fw,vec2(0.5),abs(fract(G)-0.5));
-   float grid=max(gl2.x,gl2.y)*clamp(1.0-fw.y*1.5,0.0,1.0);
-   float fade=clamp(yy*2.2,0.0,1.0);
-   col=mix(vec3(0.02,0.0,0.05),mix(uColA,uColB,0.4),grid*fade);
- }
- col*=1.0+0.15*uFlash*uIntensity;
+const FS_SYNTH=HEAD+`float ridge(float x,float s){float v=0.0,a=0.5;vec2 p=vec2(x,s);for(int i=0;i<5;i++){v+=a*(1.0-abs(noise(p)*2.0-1.0));p=p*2.1+vec2(1.3,0.0);a*=0.5;}return v;}
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;float hor=-0.06;vec3 col;
+ if(uv.y>hor){float y=uv.y-hor;
+  col=mix(palette(0.6)*0.55,palette(0.12)*0.22,smoothstep(0.0,0.5,y));
+  vec2 g=uv*90.0;vec2 gi=floor(g),gf=fract(g)-0.5;
+  col+=vec3(1.0)*smoothstep(0.09,0.0,length(gf-(vec2(hash(gi),hash(gi+3.0))-0.5)*0.6))*step(0.94,hash(gi+1.0))*smoothstep(0.12,0.4,y)*(0.55+0.45*sin(t*2.0+hash(gi)*30.0));
+  vec2 s=uv-vec2(0.0,hor+0.19);float sr=0.26*(1.0+0.025*uBass*I),d=length(s);
+  float sy=(s.y+sr)/(2.0*sr);
+  float k=fract(s.y*16.0+t*0.3),gap=clamp((0.52-sy)*0.95,0.0,0.48),aa=fwidth(s.y*16.0)*1.2;
+  float vis=gap>0.001?smoothstep(gap-aa,gap+aa,k):1.0;
+  float sunM=smoothstep(sr,sr-0.003,d)*vis;
+  vec3 sunc=mix(palette(0.62),palette(1.0),smoothstep(0.0,1.0,sy));
+  col+=palette(0.8)*exp(-max(d-sr,0.0)*6.0)*0.3*(0.7+0.6*uLevel);
+  col=mix(col,sunc*1.1,sunM);
+  float ax=abs(uv.x);float spf=texture(uSpec,vec2(0.05+min(ax,1.0)*0.5,0.5)).r;
+  float mf=hor+0.015+(0.10*ridge(ax*2.2+5.0,1.0)+spf*0.05*I)*smoothstep(0.08,0.55,ax);
+  float mn=hor+0.005+0.16*ridge(ax*1.4+1.7,4.0)*smoothstep(0.22,0.9,ax);
+  if(uv.y<mf){col=mix(col,palette(0.35)*0.18,0.85);}
+  col+=palette(0.85)*exp(-abs(uv.y-mf)*uRes.y*0.35)*0.35*smoothstep(0.08,0.4,ax);
+  if(uv.y<mn){col=palette(0.1)*0.06+palette(0.5)*0.05*smoothstep(mn-0.08,mn,uv.y);}
+  col+=palette(0.9)*exp(-abs(uv.y-mn)*uRes.y*0.3)*0.6*smoothstep(0.22,0.5,ax);
+ }else{
+  float yy=hor-uv.y;float persp=0.32/yy;
+  vec2 G=vec2(uv.x*persp*1.2,persp-uFlow*1.4);vec2 fw=fwidth(G)*1.2+0.01;
+  vec2 gl2=smoothstep(0.5-fw,vec2(0.5),abs(fract(G)-0.5));
+  float grid=max(gl2.x,gl2.y)*clamp(1.2-fw.y*1.2,0.0,1.0);
+  col=palette(0.1)*0.05+palette(0.78)*grid*(0.55+0.9*uBass*I)*smoothstep(0.0,0.05,yy);
+  col+=palette(0.85)*exp(-abs(uv.x)*7.0)*exp(-yy*5.0)*0.35*(0.6+0.5*sin(yy*120.0-t*3.0));
+  col=mix(col,palette(0.6)*0.45,exp(-yy*14.0));}
+ col+=palette(0.9)*exp(-abs(uv.y-hor)*70.0)*0.45;
+ col*=1.0+0.12*uFlash*I;
+ col*=1.0-0.35*pow(length(uv)*0.9,2.2);
+ col=1.0-exp(-col*1.6);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.015;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
 const FS_PARTICLES=HEAD+`void main(){
- vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float r=length(uv)+1e-3;float a=atan(uv.y,uv.x)+uSeed*0.7;
- vec3 col=vec3(0.0);float sp3=1.0+uBass*3.0*uIntensity;
- for(int i=0;i<3;i++){float fi=float(i);float rr=r*(1.0+fi*0.5);
-   float flow=fract(rr*5.0-uFlow*1.2+fi*0.33);
-   float h=hash(vec2(floor(fract(a/6.2831853+0.5)*24.0),floor(rr*5.0-uFlow*1.2+fi*0.33)));
-   float s=step(0.9,h)*smoothstep(0.5,0.0,abs(flow-0.5));
-   col+=palette(0.55+0.2*fi)*s;}
- col+=palette(0.95)*exp(-r*3.5)*(0.3+uLevel);
- col+=palette(0.8)*uFlash*exp(-r*2.5)*0.35*uIntensity;
- col*=1.0-0.6*pow(clamp(r*0.9,0.0,1.0),2.0);
+ vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;float r=length(uv);
+ vec2 rad=uv/max(r,1e-3),tng=vec2(-rad.y,rad.x);
+ vec3 col=palette(0.2)*0.12*fbm(uv*1.5+vec2(t*0.02,0.0)+uSeed)*(0.6+uLevel);
+ float spd=uFlow*0.16,str=0.3+2.5*uBass*I;
+ for(int k=0;k<12;k++){float fk=float(k);float z=fract(fk/12.0+spd);
+  float fade=smoothstep(0.0,0.2,z)*smoothstep(1.0,0.8,z);
+  float sc=mix(16.0,0.8,z*z);
+  vec2 p=uv*sc+vec2(fk*17.3+uSeed*3.0,fk*9.1);
+  vec2 id=floor(p),f=fract(p)-0.5;float h=hash(id+fk*31.0);
+  if(h<0.62)continue;
+  vec2 d=f-(vec2(hash(id+1.3),hash(id+7.1))-0.5)*0.3;
+  float el=1.0+min(str*z*z,2.5);
+  float al=dot(d,rad)/el,ac=dot(d,tng);
+  float dist=length(vec2(al,ac));
+  float size=0.012+0.05*z*z;
+  float core=smoothstep(size,size*(0.2+0.6*z),dist)*(0.55+0.45*smoothstep(size*0.5,size,dist)*z);
+  float halo=exp(-dist*dist/(size*size*2.5))*0.25;
+  float cf=smoothstep(0.5,0.32,max(abs(f.x),abs(f.y)));core*=cf;halo*=cf;
+  float tw=0.7+0.6*uHigh*I*step(0.8,h);
+  col+=palette(0.4+0.55*fract(h*7.3))*(core+halo)*fade*(0.5+1.2*z)*(0.55+0.9*uLevel)*tw;}
+ col+=palette(0.95)*exp(-r*6.0)*(0.1+0.5*uBass*I);
+ col*=1.0+0.15*uFlash*I;
+ col*=1.0-0.45*pow(r*0.9,2.2);
+ col=1.0-exp(-col*1.4);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.015;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
 const FS_IMAGE=HEAD+`uniform sampler2D uImg;uniform float uImgAspect,uHasImg;
@@ -459,7 +514,7 @@ void main(){
  for(int i=0;i<56;i++){d=map(ro+rd*tt);md=min(md,d);if(d<0.002){hit=true;break;}tt+=d*0.9;if(tt>12.0)break;}
  vec3 col=mix(uColA*0.05,uColB*0.08,uv.y+0.5);
  vec2 g=uv*14.0+vec2(t*0.03,t*0.02);vec2 gi=floor(g);vec2 gf=fract(g)-0.5;
- col+=palette(0.8)*smoothstep(0.25,0.0,length(gf))*step(0.9,hash(gi))*0.25*(0.5+uHigh*2.0*I);
+ col+=palette(0.8)*smoothstep(0.25,0.0,length(gf))*step(0.9,hash(gi))*0.25*(0.5+uHigh*2.0*I)*uFxSpark;
  col+=palette(0.85)*exp(-md*7.0)*(0.12+0.45*uLevel+0.8*uFlash*I);
  if(hit){vec3 p=ro+rd*tt;vec2 e=vec2(0.002,0.0);
   vec3 n=normalize(vec3(map(p+e.xyy)-map(p-e.xyy),map(p+e.yxy)-map(p-e.yxy),map(p+e.yyx)-map(p-e.yyx)));
@@ -536,7 +591,7 @@ void main(){
  float r=length(uv);
  col+=palette(0.9)*exp(-r*4.0)*(0.08+0.5*uBass*I);
  col*=1.0+0.18*uFlash*I;
- vec2 g=gl_FragCoord.xy/5.0;col+=palette(0.95)*step(0.993,hash(floor(g)+floor(t*15.0)))*uHigh*1.5*I*smoothstep(0.1,0.6,r);
+ vec2 g=gl_FragCoord.xy/5.0;col+=palette(0.95)*step(0.993,hash(floor(g)+floor(t*15.0)))*uHigh*1.5*I*smoothstep(0.1,0.6,r)*uFxSpark;
  col*=1.0-0.45*pow(r*0.9,2.2);
  col=1.0-exp(-col*1.3);
  col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
@@ -546,7 +601,7 @@ const FS_INK=HEAD+`uniform float uKickAge;
 void main(){
  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;float r=length(uv);
  vec2 p=uv*1.4;
- p+=normalize(uv+1e-4)*exp(-pow((r-uKickAge*0.8)*7.0,2.0))*exp(-uKickAge*1.8)*0.35*I;
+ p+=normalize(uv+1e-4)*exp(-pow((r-uKickAge*0.8)*7.0,2.0))*exp(-uKickAge*1.8)*0.35*I*uFxFlash;
  p*=rot((0.5+1.4*uBass*I)*exp(-r*1.3)+t*0.03);
  for(int i=1;i<7;i++){float fi=float(i);
   p+=vec2(0.6/fi*sin(fi*p.y*1.25+t*0.21+fi*1.7+0.6*uMid*I),0.6/fi*cos(fi*p.x*1.1-t*0.19+fi*0.9));}
@@ -563,7 +618,7 @@ void main(){
  vec3 L=normalize(vec3(-0.4,0.5,0.75));float spec=pow(max(dot(reflect(-L,n),vec3(0.0,0.0,1.0)),0.0),24.0);
  col*=0.85+0.25*max(dot(n,L),0.0);
  col+=palette(0.95)*spec*sm*(0.25+0.8*uLevel);
- vec2 g=gl_FragCoord.xy/6.0;col+=palette(0.95)*step(0.994,hash(floor(g)+floor(t*12.0)))*ink*uHigh*2.0*I;
+ vec2 g=gl_FragCoord.xy/6.0;col+=palette(0.95)*step(0.994,hash(floor(g)+floor(t*12.0)))*ink*uHigh*2.0*I*uFxSpark;
  col+=palette(0.9)*uFlash*I*0.25*exp(-r*2.0);
  col*=1.0-0.45*pow(r*0.9,2.2);
  col=1.0-exp(-col*1.3);
@@ -585,7 +640,7 @@ float mount(float x,float t){return 0.035+0.11*fbm(vec2(x*2.2+t*0.004,3.0))+0.03
 void main(){
  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;
  float hor=-0.2;bool refl=uv.y<hor;vec2 su=uv;
- if(refl){float rp=exp(-pow((length((uv-vec2(0.0,hor))*vec2(1.0,4.0))-uKickAge*0.7)*10.0,2.0))*exp(-uKickAge*2.0)*I;
+ if(refl){float rp=exp(-pow((length((uv-vec2(0.0,hor))*vec2(1.0,4.0))-uKickAge*0.7)*10.0,2.0))*exp(-uKickAge*2.0)*I*uFxFlash;
   su.y=2.0*hor-uv.y+0.006*sin(uv.y*160.0+t*2.0)*(1.0+uBass*2.0*I)+0.02*rp;
   su.x+=0.004*sin(uv.y*90.0-t*1.5);}
  vec3 rd=normalize(vec3(su.x,su.y-hor+0.02,1.0));rd.xz*=rot(t*0.01);
@@ -618,7 +673,7 @@ void main(){
  float f3=sin(dot(uv-c3,vec2(cos(t*0.1+sd),sin(t*0.1+sd)))*freq*0.8);
  float m=f1*f2;m=mix(m,m*sp,0.5+0.5*sin(t*0.05+sd));m+=0.35*f3*sp;
  float aa=fwidth(m)*1.2+0.01;float bw=smoothstep(-aa,aa,m);
- float inv=(1.0-smoothstep(0.0,0.12,uKickAge))*0.75*I;bw=mix(bw,1.0-bw,clamp(inv,0.0,1.0));
+ float inv=(1.0-smoothstep(0.0,0.12,uKickAge))*0.75*I*uFxFlash;bw=mix(bw,1.0-bw,clamp(inv,0.0,1.0));
  vec3 hi=palette(0.6+0.4*sin(r*6.0-t+sd));
  vec3 col=mix(uColA*0.04,hi,bw);
  float sh=0.004*uHigh*I;
@@ -662,59 +717,64 @@ void main(){
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
 const FS_GYROID=HEAD+`uniform float uKickAge,uSecT,uEnergy;
-float map(vec3 p){float t=uTime,I=uIntensity;
- p.xy*=rot(p.z*0.12*sin(uSeed*1.3+0.5)+t*0.04);
- float sc=1.5+0.35*sin(uSeed*1.7);
- vec3 q=p*sc;float g=abs(dot(sin(q),cos(q.zxy)))/sc;
- vec3 q2=p*sc*3.1+t*0.2;float g2=abs(dot(sin(q2),cos(q2.zxy)))/(sc*3.1);
- float d=g-0.04-0.06*uBass*I+g2*0.3;
+float map(vec3 p){float I=uIntensity;
+ p.xy*=rot(p.z*0.07*sin(uSeed*1.3+0.5));
+ float sc=1.55+0.3*sin(uSeed*1.7);vec3 q=p*sc;
+ float g=dot(sin(q),cos(q.zxy));
+ float th=0.09+0.06*uBass*I;
+ float d=(abs(g)-th)/sc*0.55;
  return max(d,0.5-length(p.xy));}
+vec3 nor(vec3 p){vec2 e=vec2(0.003,-0.003);return normalize(e.xyy*map(p+e.xyy)+e.yyx*map(p+e.yyx)+e.yxy*map(p+e.yxy)+e.xxx*map(p+e.xxx));}
 void main(){
  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;float t=uTime,I=uIntensity;
- vec3 ro=vec3(0.0,0.0,t*1.8);
- vec3 rd=normalize(vec3(uv*rot(t*0.03+0.3*sin(t*0.07)),1.1-0.15*uFlash*I));
- float tt=0.0;vec3 acc=vec3(0.0);
- for(int i=0;i<70;i++){vec3 p=ro+rd*tt;float d=map(p);
-  float h=fract(p.z*0.035+uSeed*0.13+0.15*sin(atan(p.y,p.x)*3.0));
-  vec3 c=palette(0.35+0.6*h);
-  acc+=c*exp(-max(d,0.0)*25.0)*0.022*exp(-tt*0.07);
-  if(d<0.002){acc+=c*0.35*exp(-tt*0.07);break;}
-  tt+=max(d*0.7,0.015);if(tt>28.0)break;}
- vec3 col=acc*(0.6+1.0*uLevel+1.5*uFlash*I);
+ vec3 ro=vec3(0.1*sin(t*0.13),0.1*cos(t*0.11),uFlow*1.1);
+ vec3 rd=normalize(vec3(uv*rot(0.3*sin(t*0.045)+t*0.015),1.3));
+ rd.xz*=rot(0.1*sin(t*0.07));rd.yz*=rot(0.07*sin(t*0.09));
+ float tt=0.0,d=1.0,glow=0.0;int it=0;bool hit=false;
+ for(int i=0;i<96;i++){it=i;d=map(ro+rd*tt);glow+=exp(-d*40.0);if(d<0.0012*(1.0+tt)){hit=true;break;}tt+=d;if(tt>20.0)break;}
+ vec3 fogc=palette(0.3)*0.18*(0.6+0.7*uLevel);vec3 col=fogc;
+ if(hit){vec3 p=ro+rd*tt;vec3 n=nor(p);
+  vec3 alb=palette(0.3+0.6*(0.5+0.5*sin(p.z*0.22+atan(p.y,p.x)*2.0+uSeed)));
+  float dif=max(dot(n,-rd),0.0),rim=pow(1.0-dif,3.0);
+  float ao=pow(clamp(1.0-float(it)/96.0,0.0,1.0),1.5);
+  float spc=pow(max(dot(reflect(rd,n),-rd),0.0),20.0);
+  float band=0.5+0.5*sin(dot(p,vec3(0.0,0.0,2.0))-uFlowE*2.0);
+  col=alb*(0.06+0.95*dif*dif)*ao;
+  col+=palette(0.9)*rim*(0.25+0.9*uMid*I)*ao;
+  col+=vec3(1.0,0.97,0.92)*spc*0.25*(0.4+uHigh*I);
+  col+=palette(0.8)*smoothstep(0.92,1.0,band)*0.25*(0.3+uBass*I);
+  col=mix(col,fogc,1.0-exp(-tt*0.12));}
+ col+=palette(0.7)*glow*0.0035*(0.5+uLevel);
  float r=length(uv);
- col+=palette(0.9)*exp(-r*5.0)*(0.05+0.6*uBass*I);
- col*=1.0+0.18*uFlash*I;
- vec2 g=gl_FragCoord.xy/5.0;col+=palette(0.95)*step(0.994,hash(floor(g)+floor(t*15.0)))*uHigh*1.5*I*smoothstep(0.15,0.6,r);
+ col*=1.0+0.1*uFlash*I;
  col*=1.0-0.45*pow(r*0.9,2.2);
- col=1.0-exp(-col*1.3);
- col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.02;
+ col=1.0-exp(-col*1.5);
+ col+=(hash(gl_FragCoord.xy+fract(t))-0.5)*0.015;
  o=vec4(clamp(col,0.0,1.0),1.0);}`;
 
 const FS_MIRROR=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSecT,uEnergy;
 void main(){
  float A=uRes.x/uRes.y;vec2 uv=gl_FragCoord.xy/uRes;vec2 c=(uv-0.5)*vec2(A,1.0);float t=uTime,I=uIntensity;
- float zoom=pow(0.985-0.022*uBass*I-0.012*uEnergy,uDt*60.0);
- float dir=cos(uSeed*3.14159265);
- float ang=dir*(0.004+0.008*sin(t*0.07+uSeed))*(1.0+uMid*2.5*I);
- ang*=uDt*60.0;vec2 q=(c*rot(ang))*zoom;
- float seg=3.0+mod(uSeed,4.0);float s=6.2831853/seg;float qa=atan(q.y,q.x);qa=abs(mod(qa,s)-0.5*s);
- q=mix(q,vec2(cos(qa),sin(qa))*length(q),0.75+0.2*sin(t*0.05+uSeed));
- q+=0.0025*vec2(sin(c.y*11.0+t*1.3),cos(c.x*9.0-t))*(1.0+uHigh*4.0*I)*uDt*60.0;
- vec3 prev=texture(uPrev,(q/vec2(A,1.0)+0.5)*uTS).rgb;
- float TK=trailK();prev=prev*pow(max(0.5,1.0-(0.038+0.02*(1.0-uLevel))*TK),uDt*60.0)-0.002*TK*uDt*60.0;
- float r=length(c);float a=atan(c.y,c.x);
- float sp=texture(uSpec,vec2(0.05+abs(a/6.2831853)*1.9,0.5)).r;
- float R0=0.05+0.05*uBass*I;
- float ring=smoothstep(0.007,0.0,abs(r-R0-sp*0.14*I));
- vec3 inj=palette(0.45+0.55*sp)*ring*(0.7+uLevel);
- float n=3.0+mod(uSeed,3.0);float pa=6.2831853/n;
- float pd=abs(r*cos(mod(a-t*0.4*(1.0+uBass*I),pa)-0.5*pa)-(0.13+0.12*uMid*I));
- inj+=palette(0.75)*smoothstep(0.004,0.0,pd)*(0.35+1.2*uMid*I);
- float spk=smoothstep(0.02,0.0,abs(fract(a/6.2831853*24.0+t*0.05)-0.5)*0.5)*step(r,0.05+sp*0.5*I)*step(0.03,r);
- inj+=palette(0.5+0.5*sp)*spk*0.25*uHigh*2.0*I;
- inj*=1.0+0.5*uFlash*I;
- vec3 col=max(prev,vec3(0.0))+inj;
- o=vec4(min(col,vec3(1.4)),1.0);}`;
+ float seg=4.0+2.0*mod(floor(uSeed+0.5),3.0),s=6.2831853/seg;
+ float zoom=pow(0.988-0.018*uBass*I-0.008*uEnergy,uDt*60.0);
+ float ang=(0.005+0.005*sin(t*0.07+uSeed))*(1.0+uMid*2.0*I)*(mod(floor(uSeed+0.5),2.0)*2.0-1.0)*uDt*60.0;
+ vec2 q=(c*rot(ang))*zoom;
+ float qa=atan(q.y,q.x),qr=length(q);qa=abs(mod(qa,s)-0.5*s);q=vec2(cos(qa),sin(qa))*qr;
+ vec2 tuv=q/vec2(A,1.0)+0.5;vec2 px=1.0/uRes;
+ vec3 prev=(2.0*texture(uPrev,tuv*uTS).rgb+texture(uPrev,(tuv+vec2(px.x,0.0))*uTS).rgb+texture(uPrev,(tuv-vec2(px.x,0.0))*uTS).rgb+texture(uPrev,(tuv+vec2(0.0,px.y))*uTS).rgb+texture(uPrev,(tuv-vec2(0.0,px.y))*uTS).rgb)/6.0;
+ float TK=trailK();prev=max(prev*pow(max(0.5,1.0-(0.03+0.02*(1.0-uLevel))*TK),uDt*60.0)-0.0015*TK*uDt*60.0,vec3(0.0));
+ float r=length(c),a=atan(c.y,c.x);float af=abs(mod(a+t*0.04,s)-0.5*s);
+ vec2 pp=vec2(cos(af),sin(af))*r;
+ float sp=texture(uSpec,vec2(0.04+af/(0.5*s)*0.55,0.5)).r;
+ float R0=0.07+0.04*uBass*I;
+ vec3 inj=palette(0.5+0.5*sp)*exp(-abs(r-R0-sp*0.1*I)*150.0)*(0.4+1.1*uLevel);
+ for(int i=0;i<3;i++){float fi=float(i);
+  float pr=0.13+0.08*fi+0.04*sin(t*(0.5+0.2*fi)+fi);float pa=0.5*s*(0.5+0.42*sin(t*(0.3+0.13*fi)+fi*2.0));
+  vec2 pc=vec2(cos(pa),sin(pa))*pr;float dd=length(pp-pc);
+  float band=i==0?uBass:(i==1?uMid:uHigh);float sz=0.012+0.022*band*I;
+  inj+=palette(0.35+0.25*fi)*exp(-dd*dd/(sz*sz))*(0.3+1.1*band*I);}
+ inj*=1.0+0.4*uFlash*I;
+ o=vec4(min(prev+inj*0.7,vec3(1.3)),1.0);}`;
 
 const FS_PAINT=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSecT,uEnergy;
 vec2 flowv(vec2 p,float t){float e=0.02;vec2 o2=vec2(0.0,t*0.05)+uSeed*3.1;
@@ -735,32 +795,32 @@ void main(){
  float kid=floor((t-uKickAge)*10.0);
  vec2 kp=(vec2(hash(vec2(kid,1.0)),hash(vec2(kid,2.0)))-0.5)*vec2(1.5,0.8);
  float kd=length(c-kp);
- col=mix(col,palette(0.95),smoothstep(0.03+uKickAge*0.3,0.0,kd)*exp(-uKickAge*8.0)*0.7*I);
+ col=mix(col,palette(0.95),smoothstep(0.03+uKickAge*0.3,0.0,kd)*exp(-uKickAge*8.0)*0.7*I*uFxSpark);
  o=vec4(min(col,vec3(1.2)),1.0);}`;
 
 const FS_GLITCH=HEAD+`uniform sampler2D uPrev;uniform float uKickAge,uSecT,uEnergy;
 void main(){
  vec2 uv=gl_FragCoord.xy/uRes;float t=uTime,I=uIntensity;float A=uRes.x/uRes.y;
- vec2 bs=vec2(48.0,27.0)/(1.0+floor(mod(uSeed,3.0)));
- vec2 bid=floor(uv*bs);float h=hash(bid+floor(t*2.0));
- vec2 mv=(vec2(hash(bid+3.1+floor(t*0.5)),hash(bid+7.7+floor(t*0.5)))-0.5)*0.005*(0.3+uMid*3.0*I)*uDt*60.0;
- mv.x+=step(0.92,h)*0.02*uHigh*I*sign(h-0.96);
- vec2 pu=uv-mv;float sh=0.0015+0.01*uFlash*I;
+ vec2 bs=vec2(32.0,18.0)/(1.0+mod(floor(uSeed+0.5),2.0));vec2 bid=floor(uv*bs),bc=(bid+0.5)/bs;
+ vec2 mv=vec2(fbm(bc*2.5+vec2(t*0.1,0.0)+uSeed)-0.5,fbm(bc*2.5+vec2(5.2,t*0.08)+uSeed)-0.5)*(0.006+0.016*uMid*I)*uDt*60.0;
+ float row=floor(uv.y*bs.y*3.0);float tr=floor(t*6.0);
+ float tear=step(0.94,hash(vec2(row,tr)))*(hash(vec2(row,tr+3.0))-0.5)*0.05*uHigh*I*uFxSpark;
+ vec2 pu=uv-mv;pu.x+=tear;float sh=0.0012+0.006*uFlash*I;
  vec3 prev=vec3(texture(uPrev,(pu+vec2(sh,0.0))*uTS).r,texture(uPrev,pu*uTS).g,texture(uPrev,(pu-vec2(sh,0.0))*uTS).b);
- prev=max(prev*pow(max(0.5,1.0-0.014*trailK()),uDt*60.0)-0.001*trailK()*uDt*60.0,vec3(0.0));
- vec2 c=(uv-0.5)*vec2(A,1.0);
- float sp=texture(uSpec,vec2(abs(uv.x-0.5)*1.8+0.04,0.5)).r;
- float bars=step(abs(uv.y-0.5)*2.0,sp*sp*0.9*I)*step(0.35,fract(uv.x*60.0));
- float circ=smoothstep(0.012,0.0,abs(length(c)-0.14-0.12*uBass*I));
- float tri=smoothstep(0.01,0.0,abs(max(abs(c.x)*0.866+c.y*0.5,-c.y)-0.22-0.08*uMid*I));
- vec3 src=palette(0.4+0.6*sp)*bars*0.8+palette(0.95)*circ+palette(0.7)*tri*step(1.0,mod(uSeed,2.0));
- float fn=fbm(c*2.5+vec2(t*0.15,-t*0.1)+uSeed*4.0);
- vec3 key=palette(fn)*(0.25+0.75*smoothstep(0.3,0.8,fn))+src;
+ prev=max(prev*pow(max(0.5,1.0-0.008*trailK()),uDt*60.0)-0.0006*trailK()*uDt*60.0,vec3(0.0));
+ vec2 c=(uv-0.5)*vec2(A,1.0);float r=length(c),a=atan(c.y,c.x);
+ float fn=fbm(c*2.2+vec2(t*0.12,-t*0.08)+uSeed*4.0);
+ vec3 key=palette(0.12+0.75*fn)*(0.3+0.7*smoothstep(0.35,0.8,fn));
+ float fs=0.5-0.5*cos(a*4.0);float sp=texture(uSpec,vec2(0.04+fs*0.55,0.5)).r;
+ key+=palette(0.96)*exp(-abs(r-0.2-sp*0.12*I)*110.0)+palette(0.75)*exp(-abs(r-0.33-0.04*uBass*I)*220.0)*0.7;
+ float bsp=texture(uSpec,vec2(abs(uv.x-0.5)*1.8+0.04,0.5)).r;
+ key+=palette(0.6)*step(abs(uv.y-0.5)*2.0,bsp*bsp*0.5*I)*step(0.4,fract(uv.x*64.0))*0.35;
+ key=floor(key*7.0+0.5)/7.0;
  float kf=floor(t-uKickAge+0.5);
- float refresh=step(hash(bid+kf*1.37),exp(-uKickAge*3.0)*0.65*I);
- vec3 col=mix(prev+src*0.12,key+prev*0.2,refresh);
- col+=palette(hash(bid))*step(0.996,h)*uHigh*1.5*I;
- col*=0.93+0.07*sin(gl_FragCoord.y*3.14159);
+ float refresh=step(hash(bid+kf*1.37),exp(-uKickAge*2.5)*0.9);
+ refresh=max(refresh,step(hash(bid+floor(t*1.5)*3.1),0.02));
+ vec3 col=mix(prev,key,refresh);
+ col*=0.97+0.03*sin(gl_FragCoord.y*3.14159);
  o=vec4(min(col,vec3(1.2)),1.0);}`;
 
 /* pase final: mezcla de escenas + fondo + iluminacion + textura del proyecto */
@@ -881,6 +941,7 @@ const PRESETS={noche:['#0b1d3a','#3d6fb0','#dff1ff'],fuego:['#ff3b00','#ff8c1a',
 let songMap=null,colorCues=[],centSm=0.35;
 function mixRGB(a,b,k){return [a[0]+(b[0]-a[0])*k,a[1]+(b[1]-a[1])*k,a[2]+(b[2]-a[2])*k];}
 function cl01(x){return Math.max(0,Math.min(1,x));}
+function fxF(){const e=S('fxFlash');return e?parseFloat(e.value):1;}
 /* paletas de 2 a 5 colores: siempre se reparten en 5 paradas para el shader */
 function resample(P,n=5){if(P.length===1)P=[P[0],[1,1,1]];const o=[];for(let i=0;i<n;i++){const x=i/(n-1)*(P.length-1),a=Math.floor(Math.min(x,P.length-2)),k=x-a;o.push(mixRGB(P[a],P[a+1],k));}return o;}
 function rgbToHex(c){return '#'+c.map(x=>Math.round(cl01(x)*255).toString(16).padStart(2,'0')).join('');}
@@ -955,7 +1016,7 @@ function colFeedback(){drawMarks();autosave();const el=S('colFb');if(!el)return;
     (colBad.length?' <span class="err">⚠ No entiendo la(s) línea(s) '+colBad.join(', ')+' (usa p. ej. <code>1:20 | neon | fundido 2</code>)</span>':'');}
 function currentColors(t){let P=resample(getPal().map(hexToRGB));
   if(playing&&colorCues.length){for(const c of colorCues){if(c.t0>t)break;let k=c.dur>0?Math.min(1,Math.max(0,(t-c.t0)/c.dur)):1;k=k*k*(3-2*k);P=P.map((x,i)=>mixRGB(x,c.P[i],k));}}
-  if(playing&&S('liveCol').checked){const h=Math.max(-20,Math.min(20,(centSm-0.3)*70)),f=1+flash*0.35;P=P.map((x,i)=>{let y=hueRot(x,h*(1-0.1*i));if(i>=3)y=y.map(v=>cl01(v*(i===4?f:1+(f-1)*0.5)));return y;});}
+  if(playing&&S('liveCol').checked){const h=Math.max(-20,Math.min(20,(centSm-0.3)*70)),f=1+flash*fxF()*0.35;P=P.map((x,i)=>{let y=hueRot(x,h*(1-0.1*i));if(i>=3)y=y.map(v=>cl01(v*(i===4?f:1+(f-1)*0.5)));return y;});}
   return P;}
 /* partes de la cancion: energia media, salto respecto a la anterior y grupos de partes parecidas (estribillos) */
 function snapBeat(t){if(!songMap)return t;const P=songMap.beatP,O=songMap.beatO;return Math.max(0,Math.round((t-O)/P)*P+O);}
@@ -1046,7 +1107,7 @@ function renderStyle(key,t,dt,pal,seed,RW,RH,slot){const ca=pal[0],cb=pal[4];
   if(L.uTime)gl.uniform1f(L.uTime,t);
   if(L.uBass)gl.uniform1f(L.uBass,lastBass);if(L.uMid)gl.uniform1f(L.uMid,lastMid);
   if(L.uHigh)gl.uniform1f(L.uHigh,lastHigh);if(L.uLevel)gl.uniform1f(L.uLevel,lastLevel);
-  if(L.uFlash)gl.uniform1f(L.uFlash,flash);
+  if(L.uFlash)gl.uniform1f(L.uFlash,flash*fxF());if(L.uFxFlash)gl.uniform1f(L.uFxFlash,fxF());if(L.uFxSpark)gl.uniform1f(L.uFxSpark,parseFloat(S('fxSpark').value));
   if(L.uIntensity)gl.uniform1f(L.uIntensity,parseFloat(S('intensity').value));
   if(L.uSpecN)gl.uniform1f(L.uSpecN,NB);
   if(L.uSeed){const sa=secAt(t);gl.uniform1f(L.uSeed,seed);if(L.uSecT)gl.uniform1f(L.uSecT,t-sa.t0);}
@@ -1192,7 +1253,7 @@ S('markCol').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('colCu
   const pal=w==='__actual'?getPal().join(' '):w;const line=fmtT(tt)+' | '+pal+' | '+S('colTr').value;
   ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+line;colorCues=parseColorCues();colFeedback();setStatus('Apuntado: '+line);};
 /* ===== Proyecto ===== */
-const PKEYS=['style','intensity','cues','colCues','sceneCues','projName','bgCol','bgMode','bgAmt','trail','brush','look','lookAmt','tex','texAmt'],PCHK=['liveCol','secMorph','colRadical'];let songName='',autoT=null,restoring=false;
+const PKEYS=['style','intensity','cues','colCues','sceneCues','projName','bgCol','bgMode','bgAmt','trail','brush','look','lookAmt','tex','texAmt','fxFlash','fxSpark'],PCHK=['liveCol','secMorph','colRadical'];let songName='',autoT=null,restoring=false;
 function getProject(){const o={app:'VISUALTERANTE',v:1,song:songName,saved:new Date().toISOString()};PKEYS.forEach(k=>o[k]=S(k).value);PCHK.forEach(k=>o[k]=S(k).checked);o.pal=getPal();return o;}
 function applyProject(o){if(!o||o.app!=='VISUALTERANTE')throw new Error('No es un proyecto de VISUALTERANTE');restoring=true;
   PKEYS.forEach(k=>{if(o[k]!==undefined&&S(k))S(k).value=o[k];});PCHK.forEach(k=>{if(o[k]!==undefined)S(k).checked=!!o[k];});
@@ -1262,8 +1323,8 @@ function refreshUI(){const st=S('style').value;S('styleOptName').textContent=sty
   document.querySelectorAll('.optEco').forEach(e=>e.style.display=FEEDBACK[st]?'':'none');
   document.querySelectorAll('.optPaint').forEach(e=>e.style.display=st==='paint'?'':'none');
   document.querySelectorAll('.optImage').forEach(e=>e.style.display=st==='image'?'':'none');
-  [['bgAmt','bgAmtV'],['trail','trailV'],['brush','brushV']].forEach(([a,b])=>S(b).textContent=parseFloat(S(a).value).toFixed(2));}
-['bgAmt','trail','brush'].forEach(id=>S(id).addEventListener('input',refreshUI));
+  [['bgAmt','bgAmtV'],['trail','trailV'],['brush','brushV'],['fxFlash','fxFlashV'],['fxSpark','fxSparkV']].forEach(([a,b])=>S(b).textContent=parseFloat(S(a).value).toFixed(2));}
+['bgAmt','trail','brush','fxFlash','fxSpark'].forEach(id=>S(id).addEventListener('input',refreshUI));
 refreshUI();
 async function ensureCtx(){if(actx&&actx.state==='suspended')await actx.resume();}
 S('play').onclick=async()=>{if(!buffer){setStatus('Primero carga una canción.');return;}
