@@ -96,7 +96,7 @@
 <div class="app">
   <div class="left">
     <div class="top" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-      <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.22 · 18 estilos <span id="qual"></span></small></h1>
+      <h1><span>VISUAL</span>TERANTE <small id="ver" style="font-size:11px;font-weight:600;color:var(--mut);letter-spacing:0">v1.23 · 18 estilos <span id="qual"></span></small></h1>
       <nav class="tabs"><a class="on" href="./">VISUALIZER</a><a href="montaje.html">MONTAJE</a></nav>
     </div>
     <div id="stageBox">
@@ -112,7 +112,7 @@
     </div>
     <div class="transport">
       <button id="play">▶ Previsualizar</button>
-      <button id="record" class="primary">⏺ Grabar MP4 (1080p)</button>
+      <button id="record" class="primary">⏺ Grabar (1080p)</button><select id="recFmt" title="Formato de grabación. Si al grabar se cierra la página, prueba WebM."><option value="mp4">MP4</option><option value="webm">WebM</option></select>
       <button id="stop" class="danger" disabled>⏹ Parar</button>
       <div class="status" id="status">Listo. Carga una canción para empezar.</div>
     </div>
@@ -837,8 +837,8 @@ void main(){
  if(T==7){uv+=(vec2(h2(px+fract(uTime)),h2(px.yx+0.37+fract(uTime)))-0.5)*0.007*TA;}
  vec3 col;
  if(T==4){float sh=0.0025*TA;col=vec3(S2(uv+vec2(sh,0.0)).r,S2(uv).g,S2(uv-vec2(sh,0.0)).b);}else col=S2(uv);
- if(uGlow>0.001){vec3 g=vec3(0.0);for(int i=0;i<8;i++){float a=float(i)*0.785398+0.3;vec2 d=vec2(cos(a)*0.5625,sin(a));g+=S2(uv+d*0.012)+S2(uv+d*0.03);}
-  g/=16.0;col+=max(g-0.22,0.0)*uGlow*1.6;}
+ if(uGlow>0.001){vec3 g=vec3(0.0);for(int i=0;i<6;i++){float a=float(i)*1.047198+0.3;vec2 d=vec2(cos(a)*0.5625,sin(a));g+=S2(uv+d*(i<3?0.014:0.028));}
+  g/=6.0;col+=max(g-0.22,0.0)*uGlow*1.6;}
  float L=lum(col),cov=smoothstep(0.0,0.4,L);
  if(uBgMode<0.5)col+=uBg*(1.0-cov)*uBgAmt;
  else{vec3 pig=clamp(col/max(max(col.r,max(col.g,col.b)),0.06),0.0,1.0);col=mix(col,mix(uBg,pig*0.92,cov),uBgAmt);}
@@ -1197,7 +1197,8 @@ function frame(){
 }
 
 let recorder=null,chunks=[],recTimer=null;
-function pickMime(){const c=['video/mp4;codecs=avc1.640028,mp4a.40.2','video/mp4;codecs=avc1.4d0028,mp4a.40.2','video/mp4;codecs=avc1.42E028,mp4a.40.2','video/mp4;codecs=avc1,mp4a.40.2','video/mp4;codecs=avc3,mp4a.40.2','video/mp4;codecs=avc1,opus','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+function pickMime(){const want=(S('recFmt')&&S('recFmt').value)||'mp4';const c0=['video/mp4;codecs=avc1.640028,mp4a.40.2','video/mp4;codecs=avc1.4d0028,mp4a.40.2','video/mp4;codecs=avc1.42E028,mp4a.40.2','video/mp4;codecs=avc1,mp4a.40.2','video/mp4;codecs=avc3,mp4a.40.2','video/mp4;codecs=avc1,opus','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+  const c=want==='webm'?c0.filter(m=>m.includes('webm')):c0;
   for(const m of c)if(window.MediaRecorder&&MediaRecorder.isTypeSupported(m))return m;return '';}
 function startRec(){const vstream=S('gl').captureStream(30);
   const combined=new MediaStream([...vstream.getVideoTracks(),...msDest.stream.getAudioTracks()]);
@@ -1253,7 +1254,7 @@ S('markCol').onclick=()=>{const tt=Math.round(lastSongT*10)/10;const ta=S('colCu
   const pal=w==='__actual'?getPal().join(' '):w;const line=fmtT(tt)+' | '+pal+' | '+S('colTr').value;
   ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+line;colorCues=parseColorCues();colFeedback();setStatus('Apuntado: '+line);};
 /* ===== Proyecto ===== */
-const PKEYS=['style','intensity','cues','colCues','sceneCues','projName','bgCol','bgMode','bgAmt','trail','brush','look','lookAmt','tex','texAmt','fxFlash','fxSpark'],PCHK=['liveCol','secMorph','colRadical'];let songName='',autoT=null,restoring=false;
+const PKEYS=['style','intensity','cues','colCues','sceneCues','projName','bgCol','bgMode','bgAmt','trail','brush','look','lookAmt','tex','texAmt','fxFlash','fxSpark','recFmt'],PCHK=['liveCol','secMorph','colRadical'];let songName='',autoT=null,restoring=false;
 function getProject(){const o={app:'VISUALTERANTE',v:1,song:songName,saved:new Date().toISOString()};PKEYS.forEach(k=>o[k]=S(k).value);PCHK.forEach(k=>o[k]=S(k).checked);o.pal=getPal();return o;}
 function applyProject(o){if(!o||o.app!=='VISUALTERANTE')throw new Error('No es un proyecto de VISUALTERANTE');restoring=true;
   PKEYS.forEach(k=>{if(o[k]!==undefined&&S(k))S(k).value=o[k];});PCHK.forEach(k=>{if(o[k]!==undefined)S(k).checked=!!o[k];});
@@ -1331,7 +1332,7 @@ S('play').onclick=async()=>{if(!buffer){setStatus('Primero carga una canción.')
   await ensureCtx();cues=parseCues();colorCues=parseColorCues();colFeedback();sceneCues=parseSceneCues();sceneFeedback();playBaseStyle=S('style').value;activeCueId=-1;stopAudio();startAudio();S('stop').disabled=false;setStatus('Previsualizando…');};
 S('record').onclick=async()=>{if(!buffer){setStatus('Primero carga una canción.');return;}
   await ensureCtx();cues=parseCues();colorCues=parseColorCues();colFeedback();sceneCues=parseSceneCues();sceneFeedback();playBaseStyle=S('style').value;activeCueId=-1;S('saveZone').style.display='none';
-  stopAudio();startAudio();startRec();S('play').disabled=true;S('record').disabled=true;S('seek').disabled=true;S('stop').disabled=false;
+  stopAudio();startAudio();try{startRec();}catch(err){stopAudio();resetButtons();showErr('No se pudo empezar a grabar: '+(err.message||err)+'\nPrueba con formato WebM.');return;}S('play').disabled=true;S('record').disabled=true;S('seek').disabled=true;S('stop').disabled=false;
   setStatus('🔴 Grabando la canción entera… no cambies de pestaña. Parará sola al acabar.');};
 S('stop').onclick=()=>{stopAudio();if(recorder&&recorder.state==='recording')recorder.stop();else resetButtons();setStatus('Parado.');};
 
